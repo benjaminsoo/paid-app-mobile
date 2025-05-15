@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, memo } from 'react';
 import { StyleSheet, View, ScrollView, Text, Platform, ActivityIndicator, FlatList, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -14,6 +14,45 @@ import { useAuth } from '@/contexts/AuthContext';
 import { fetchUserDebts, markDebtAsPaid } from '@/firebase/firestore';
 import { Debt } from '@/firebase/models';
 import eventEmitter from '@/utils/eventEmitter';
+
+// Create a memoized Debt Item component to prevent unnecessary re-renders
+const DebtItem = memo(({ 
+  item, 
+  onMarkPaid 
+}: { 
+  item: Debt, 
+  onMarkPaid: (id: string) => void 
+}) => {
+  return (
+    <View style={[styles.debtItem, item.isPaid && styles.paidDebtItem]}>
+      <View style={styles.debtInfo}>
+        <Text style={styles.debtorName}>{item.debtorName}</Text>
+        <Text style={styles.debtAmount}>${item.amount.toFixed(2)}</Text>
+        {item.description ? (
+          <Text style={styles.debtDescription}>{item.description}</Text>
+        ) : null}
+        <Text style={styles.debtDate}>
+          {item.isPaid 
+            ? `Paid on ${new Date(item.paidAt!).toLocaleDateString()}` 
+            : `Added on ${new Date(item.createdAt).toLocaleDateString()}`}
+        </Text>
+      </View>
+      
+      {!item.isPaid && (
+        <Pressable 
+          style={({pressed}) => [
+            styles.markPaidButton,
+            {opacity: pressed ? 0.8 : 1}
+          ]}
+          onPress={() => onMarkPaid(item.id!)}
+        >
+          <Ionicons name="checkmark-circle" size={20} color={Colors.light.tint} />
+          <Text style={styles.markPaidText}>Mark Paid</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+});
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
@@ -61,26 +100,6 @@ export default function HomeScreen() {
     }
   }, [currentUser]);
   
-  // Load debts when component mounts or refreshKey changes
-  useEffect(() => {
-    console.log('Loading debts, refreshKey:', refreshKey);
-    loadDebts();
-  }, [loadDebts, refreshKey]);
-  
-  // Additional useEffect to force a refresh when the component mounts
-  useEffect(() => {
-    // Set a timeout to check for debts after a short delay
-    // This helps with the initial render where data might not be loaded yet
-    const timer = setTimeout(() => {
-      if (debts.length === 0 && !loading && !error) {
-        console.log('No debts found after delay, forcing refresh');
-        setRefreshKey(prev => prev + 1);
-      }
-    }, 1000);
-    
-    return () => clearTimeout(timer);
-  }, [debts.length, loading, error]);
-  
   // Button to manually refresh the list
   const handleRefresh = () => {
     console.log('Manual refresh triggered');
@@ -106,39 +125,36 @@ export default function HomeScreen() {
     }
   };
   
-  // Render a debt item
-  const renderDebtItem = ({ item }: { item: Debt }) => {
-    console.log('Rendering debt item:', item);
-    return (
-      <View style={[styles.debtItem, item.isPaid && styles.paidDebtItem]}>
-        <View style={styles.debtInfo}>
-          <Text style={styles.debtorName}>{item.debtorName}</Text>
-          <Text style={styles.debtAmount}>${item.amount.toFixed(2)}</Text>
-          {item.description ? (
-            <Text style={styles.debtDescription}>{item.description}</Text>
-          ) : null}
-          <Text style={styles.debtDate}>
-            {item.isPaid 
-              ? `Paid on ${new Date(item.paidAt!).toLocaleDateString()}` 
-              : `Added on ${new Date(item.createdAt).toLocaleDateString()}`}
-          </Text>
-        </View>
-        
-        {!item.isPaid && (
-          <Pressable 
-            style={({pressed}) => [
-              styles.markPaidButton,
-              {opacity: pressed ? 0.8 : 1}
-            ]}
-            onPress={() => handleMarkPaid(item.id!)}
-          >
-            <Ionicons name="checkmark-circle" size={20} color={Colors.light.tint} />
-            <Text style={styles.markPaidText}>Mark Paid</Text>
-          </Pressable>
-        )}
-      </View>
-    );
-  };
+  // Render a debt item - use the memoized component
+  const renderDebtItem = useCallback(({ item }: { item: Debt }) => {
+    return <DebtItem item={item} onMarkPaid={handleMarkPaid} />;
+  }, [handleMarkPaid]);
+  
+  // Optimize the effect to avoid unnecessary refreshes
+  useEffect(() => {
+    // Load debts only when component mounts or when refreshKey changes
+    console.log('Loading debts, refreshKey:', refreshKey);
+    loadDebts();
+  }, [loadDebts, refreshKey]); // Keep this dependency array
+  
+  // Optimize the auto-refresh effect to prevent unnecessary refreshes
+  useEffect(() => {
+    // Only run this effect once to check for initial data
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    
+    if (debts.length === 0 && !loading && !error) {
+      // Set a timeout to wait for data to load before forcing a refresh
+      timer = setTimeout(() => {
+        console.log('No debts found after delay, forcing refresh');
+        setRefreshKey(prev => prev + 1);
+      }, 2000); // Increase timeout to 2 seconds to avoid too many refreshes
+    }
+    
+    // Clean up timeout on unmount
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, []); // Empty dependency array - only run once
   
   // Listen for debt added events
   useEffect(() => {
@@ -294,6 +310,11 @@ export default function HomeScreen() {
                   No debts found. Add your first debt to start tracking.
                 </Text>
               )}
+              initialNumToRender={5}
+              maxToRenderPerBatch={10}
+              removeClippedSubviews={Platform.OS !== 'web'}
+              windowSize={5}
+              extraData={debts.length}
             />
           )}
         </LinearGradient>

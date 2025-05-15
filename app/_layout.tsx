@@ -41,6 +41,14 @@ export default function RootLayout() {
             }} 
           />
           <Stack.Screen 
+            name="profile-edit" 
+            options={{ 
+              presentation: 'modal',
+              headerShown: false,
+              animation: 'slide_from_right',
+            }} 
+          />
+          <Stack.Screen 
             name="auth/login" 
             options={{ 
               headerTitle: 'Login',

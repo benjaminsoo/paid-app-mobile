@@ -203,4 +203,119 @@ export const deleteDebt = async (userId, debtId) => {
     console.error('Error deleting debt:', error);
     throw error;
   }
+};
+
+/**
+ * Update user profile data
+ * @param {string} userId - ID of the user
+ * @param {Object} profileData - Profile data to update
+ * @returns {Promise<Object>} - Updated user data
+ */
+export const updateUserProfile = async (userId, profileData) => {
+  try {
+    // Condensed logging to avoid spam
+    console.log(`Updating profile for user: ${userId}`);
+    
+    const userRef = doc(db, 'users', userId);
+    const userSnap = await getDoc(userRef);
+    const now = new Date().toISOString();
+    
+    let userData = {};
+    
+    if (userSnap.exists()) {
+      userData = userSnap.data();
+      
+      // Get existing profile or initialize empty object
+      const existingProfile = userData.profile || {};
+      
+      // Update the document with the profile as a nested object
+      const updateData = {
+        profile: {
+          ...existingProfile,
+          ...profileData,
+          updatedAt: now
+        },
+        updatedAt: now
+      };
+      
+      await updateDoc(userRef, updateData);
+      console.log('Profile updated successfully');
+    } else {
+      // Create new user document if it doesn't exist
+      userData = {
+        email: '',
+        username: '',
+        createdAt: now,
+        updatedAt: now,
+        profile: {
+          ...profileData,
+          updatedAt: now
+        }
+      };
+      
+      await setDoc(userRef, userData);
+      console.log('New user document created');
+    }
+    
+    // Get updated document to return
+    const updatedDoc = await getDoc(userRef);
+    return updatedDoc.exists() ? { id: userId, ...updatedDoc.data() } : null;
+    
+  } catch (error) {
+    console.error('Error updating user profile:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update user payment methods
+ * @param {string} userId - ID of the user
+ * @param {Array} paymentMethods - Array of payment method objects
+ * @returns {Promise<Object>} - Updated user data
+ */
+export const updatePaymentMethods = async (userId, paymentMethods) => {
+  try {
+    console.log('Updating payment methods for user:', userId);
+    console.log('Payment methods to save:', paymentMethods);
+    
+    const userRef = doc(db, 'users', userId);
+    const userSnap = await getDoc(userRef);
+    const now = new Date().toISOString();
+    
+    let userData = {};
+    
+    if (userSnap.exists()) {
+      userData = userSnap.data();
+      
+      // Update the payment methods
+      await updateDoc(userRef, {
+        paymentMethods: paymentMethods,
+        updatedAt: now
+      });
+      
+      console.log('Payment methods updated successfully');
+    } else {
+      // Create new user document if it doesn't exist
+      userData = {
+        email: '',
+        username: '',
+        createdAt: now,
+        updatedAt: now,
+        paymentMethods: paymentMethods
+      };
+      
+      await setDoc(userRef, userData);
+      console.log('New user document created with payment methods');
+    }
+    
+    return {
+      id: userId,
+      ...userData,
+      paymentMethods: paymentMethods,
+      updatedAt: now
+    };
+  } catch (error) {
+    console.error('Error updating payment methods:', error);
+    throw error;
+  }
 }; 

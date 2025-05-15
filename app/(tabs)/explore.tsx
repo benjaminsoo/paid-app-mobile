@@ -1,77 +1,110 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, ScrollView, View, Text, ActivityIndicator, Pressable, Platform } from 'react-native';
+import { StyleSheet, ScrollView, View, Text, ActivityIndicator, Pressable, Platform, Share, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import * as Clipboard from 'expo-clipboard';
 
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
-import { fetchCollection, fetchDocument } from '@/firebase/firestore';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function ProfileScreen() {
   const colorScheme = useColorScheme();
-  const { currentUser, logout } = useAuth();
+  const { currentUser, userProfile, logout, refreshUserProfile } = useAuth();
   const router = useRouter();
   
   const [loading, setLoading] = useState(true);
-  const [userData, setUserData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
   
-  // Load user data from Firestore
+  // Load user profile data only when component mounts or currentUser changes
   useEffect(() => {
-    const loadUserData = async () => {
-      if (!currentUser?.uid) return;
+    let isMounted = true;
+    let isLoading = false; // Track if we're already loading data
+    
+    const loadUserProfile = async () => {
+      if (!currentUser?.uid || isLoading) {
+        if (isMounted) {
+          setLoading(false);
+        }
+        return;
+      }
       
       try {
-        setLoading(true);
-        // Fetch the current user data directly instead of fetching all users
-        const userDoc = await fetchDocument('users', currentUser.uid);
+        // Set loading flag to prevent duplicate requests
+        isLoading = true;
         
-        if (userDoc) {
-          console.log('User data loaded:', userDoc);
-          setUserData(userDoc);
+        if (isMounted) {
+          setLoading(true);
+        }
+        
+        // Only refresh if userProfile is null
+        if (!userProfile) {
+          await refreshUserProfile();
+        }
+        
+        if (isMounted) {
           setError(null);
-        } else {
-          setError('User data not found');
+          setLoading(false);
         }
       } catch (err: any) {
-        console.error('Error loading user data:', err);
-        setError(err.message || 'Unknown error');
-        
-        // Handle permission errors gracefully
-        if (err.code === 'permission-denied') {
-          setError('Permission denied. Please check your Firestore security rules.');
+        console.error('Error loading user profile:', err);
+        if (isMounted) {
+          setError(err.message || 'Unknown error');
+          setLoading(false);
         }
       } finally {
-        setLoading(false);
+        isLoading = false;
       }
     };
     
-    loadUserData();
-  }, [currentUser]);
+    loadUserProfile();
+    
+    // Cleanup function
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUser, refreshUserProfile, userProfile]); // Include userProfile to track its changes
 
-  const handleCopyLink = () => {
-    if (!userData?.username) return;
+  // Check if profile has been set up
+  const hasProfileData = userProfile?.profile && 
+    (userProfile.profile.name || 
+     userProfile.profile.location || 
+     userProfile.profileImageUrl || 
+     userProfile.profile.backgroundImageUrl ||
+     (userProfile.profile && userProfile.profile.paymentMethods && 
+      userProfile.profile.paymentMethods.some((method: any) => method.value)));
+
+  const handleCopyLink = async () => {
+    if (!userProfile?.username) return;
     
-    // Show "copied" indicator even though we can't actually copy to clipboard
-    setLinkCopied(true);
-    
-    // Reset copied state after 2 seconds
-    setTimeout(() => {
-      setLinkCopied(false);
-    }, 2000);
-    
-    // In a real implementation, this would use Clipboard API
-    console.log(`Copying link: trypaid.io/${userData.username}`);
+    try {
+      await Clipboard.setStringAsync(`trypaid.io/${userProfile.username}`);
+      setLinkCopied(true);
+      
+      // Reset copied state after 2 seconds
+      setTimeout(() => {
+        setLinkCopied(false);
+      }, 2000);
+    } catch (error) {
+      console.error('Error copying to clipboard:', error);
+    }
   };
 
-  const handleVisitLink = () => {
-    // In a real app, this would open the browser to the payment link
-    console.log(`Visiting payment link: trypaid.io/${userData?.username}`);
+  const handleVisitLink = async () => {
+    if (!userProfile?.username || !hasProfileData) return;
+    
+    try {
+      await Share.share({
+        message: `Check out my payment link: trypaid.io/${userProfile.username}`,
+        url: `https://trypaid.io/${userProfile.username}`
+      });
+    } catch (error) {
+      console.error('Error sharing link:', error);
+    }
   };
 
   const handleSignOut = async () => {
@@ -80,6 +113,66 @@ export default function ProfileScreen() {
       router.replace('/auth/login');
     } catch (error) {
       console.error('Sign out error:', error);
+    }
+  };
+
+  const handleEditProfile = () => {
+    // Using the simple push method with correct path
+    router.push('/profile-edit');
+  };
+
+  const handlePreviewProfile = () => {
+    router.push('/profile-preview');
+  };
+
+  const getPaymentMethodColor = (type: string) => {
+    switch (type.toLowerCase()) {
+      case 'venmo':
+        return '#3D95CE';
+      case 'zelle':
+        return '#6D1ED4';
+      case 'cashapp':
+        return '#00D632';
+      case 'paypal':
+        return '#0079C1';
+      case 'applepay':
+        return '#000000';
+      default:
+        return Colors.light.tint;
+    }
+  };
+
+  const getPaymentMethodIcon = (type: string) => {
+    switch (type.toLowerCase()) {
+      case 'venmo':
+        return <Ionicons name="logo-venmo" size={16} color="#FFFFFF" />;
+      case 'zelle':
+        return <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>Z</Text>;
+      case 'cashapp':
+        return <Ionicons name="cash-outline" size={16} color="#FFFFFF" />;
+      case 'paypal':
+        return <Ionicons name="logo-paypal" size={16} color="#FFFFFF" />;
+      case 'applepay':
+        return <Ionicons name="logo-apple" size={16} color="#FFFFFF" />;
+      default:
+        return <Ionicons name="wallet-outline" size={16} color="#FFFFFF" />;
+    }
+  };
+
+  const formatPaymentMethodName = (type: string) => {
+    switch (type.toLowerCase()) {
+      case 'venmo':
+        return 'Venmo';
+      case 'zelle':
+        return 'Zelle';
+      case 'cashapp':
+        return 'Cash App';
+      case 'paypal':
+        return 'PayPal';
+      case 'applepay':
+        return 'Apple Pay';
+      default:
+        return type.charAt(0).toUpperCase() + type.slice(1);
     }
   };
 
@@ -104,7 +197,7 @@ export default function ProfileScreen() {
         bounces={false}
         alwaysBounceVertical={false}
       >
-        {loading ? (
+        {loading && !userProfile ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={Colors.light.tint} />
             <Text style={styles.loadingText}>Loading profile data...</Text>
@@ -114,23 +207,31 @@ export default function ProfileScreen() {
             <Ionicons name="alert-circle" size={50} color={Colors.light.tint} />
             <Text style={styles.errorText}>Error: {error}</Text>
           </View>
-        ) : userData ? (
+        ) : userProfile ? (
           <View style={styles.profileContainer}>
             {/* Payment Link Card */}
             <LinearGradient
               colors={['rgba(35,35,35,0.98)', 'rgba(25,25,25,0.95)']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={styles.card}
+              style={[
+                styles.card,
+                !hasProfileData && styles.incompleteCard
+              ]}
             >
               <Text style={styles.cardTitle}>
-                Your Personal Payment Link
+                {hasProfileData 
+                  ? "Your Personal Payment Link" 
+                  : "Your Link has not been created yet"}
               </Text>
               
               <View style={styles.linkContainer}>
                 <View style={styles.linkTextContainer}>
-                  <Text style={styles.linkText}>
-                    trypaid.io/{userData.username}
+                  <Text style={[
+                    styles.linkText,
+                    !hasProfileData && styles.incompleteText
+                  ]}>
+                    trypaid.io/{userProfile.username}
                   </Text>
                 </View>
                 
@@ -152,16 +253,37 @@ export default function ProfileScreen() {
               <Pressable 
                 style={({pressed}) => [
                   styles.visitButton,
-                  {opacity: pressed ? 0.8 : 1}
+                  !hasProfileData && styles.disabledButton,
+                  {opacity: pressed && hasProfileData ? 0.8 : 1}
                 ]}
                 onPress={handleVisitLink}
+                disabled={!hasProfileData}
               >
                 <Ionicons name="open-outline" size={18} color="#000" style={styles.buttonIcon} />
-                <Text style={styles.visitButtonText}>Visit</Text>
+                <Text style={styles.visitButtonText}>Share</Text>
               </Pressable>
               
+              {/* Add Preview Button in the Payment Link card */}
+              {hasProfileData && (
+                <Pressable 
+                  style={({pressed}) => [
+                    styles.previewButton,
+                    {opacity: pressed ? 0.8 : 1}
+                  ]}
+                  onPress={handlePreviewProfile}
+                >
+                  <View style={styles.previewButtonContent}>
+                    <Ionicons name="globe-outline" size={18} color="#fff" style={styles.buttonIcon} />
+                    <Text style={styles.previewButtonText}>Preview Link</Text>
+                  </View>
+                </Pressable>
+              )}
+              
               <Text style={styles.linkDescription}>
-                Share this link with anyone to receive payments through any of your configured methods.
+                {hasProfileData 
+                  ? "Share this link with anyone to receive payments through any of your configured methods."
+                  : "This is what your link address will be after you create it."
+                }
               </Text>
             </LinearGradient>
             
@@ -179,14 +301,114 @@ export default function ProfileScreen() {
               
               <View style={styles.infoRow}>
                 <Text style={styles.infoLabel}>Email:</Text>
-                <Text style={styles.infoValue}>{userData.email}</Text>
+                <Text style={styles.infoValue}>{userProfile.email}</Text>
               </View>
               
               <View style={[styles.infoRow, styles.lastInfoRow]}>
                 <Text style={styles.infoLabel}>Username:</Text>
-                <Text style={styles.infoValue}>{userData.username}</Text>
+                <Text style={styles.infoValue}>{userProfile.username}</Text>
               </View>
             </LinearGradient>
+            
+            {/* Profile Information */}
+            {userProfile.profile && (
+              <LinearGradient
+                colors={['rgba(35,35,35,0.98)', 'rgba(25,25,25,0.95)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.card}
+              >
+                <View style={styles.accountHeaderContainer}>
+                  <Ionicons name="information-circle-outline" size={20} color={Colors.light.tint} />
+                  <Text style={styles.accountHeader}>Profile Information</Text>
+                </View>
+                
+                {userProfile.profile.name && (
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Name:</Text>
+                    <Text style={styles.infoValue}>{userProfile.profile.name}</Text>
+                  </View>
+                )}
+                
+                {userProfile.profile.location && (
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Location:</Text>
+                    <Text style={styles.infoValue}>{userProfile.profile.location}</Text>
+                  </View>
+                )}
+                
+                {userProfile.profile.profileImageUrl && (
+                  <View style={[styles.infoRow, styles.imageInfoRow]}>
+                    <Text style={styles.infoLabel}>Profile Image:</Text>
+                    <View style={styles.profileImageContainer}>
+                      <Image 
+                        source={{ uri: userProfile.profile.profileImageUrl }}
+                        style={styles.profileImageThumbnail}
+                        resizeMode="cover"
+                      />
+                    </View>
+                  </View>
+                )}
+                
+                {userProfile.profile.backgroundImageUrl && (
+                  <View style={[styles.infoRow, styles.imageInfoRow, styles.lastInfoRow]}>
+                    <Text style={styles.infoLabel}>Background:</Text>
+                    <View style={styles.backgroundImageContainer}>
+                      <Image 
+                        source={{ uri: userProfile.profile.backgroundImageUrl }}
+                        style={styles.backgroundImageThumbnail}
+                        resizeMode="cover"
+                      />
+                    </View>
+                  </View>
+                )}
+              </LinearGradient>
+            )}
+            
+            {/* Payment Methods */}
+            {userProfile.profile && userProfile.profile.paymentMethods && userProfile.profile.paymentMethods.length > 0 && (
+              <LinearGradient
+                colors={['rgba(35,35,35,0.98)', 'rgba(25,25,25,0.95)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.card}
+              >
+                <View style={styles.accountHeaderContainer}>
+                  <Ionicons name="wallet-outline" size={20} color={Colors.light.tint} />
+                  <Text style={styles.accountHeader}>Payment Methods</Text>
+                </View>
+                
+                {userProfile.profile.paymentMethods
+                  .filter((method: any) => method.value)
+                  .map((method: any, index: number, array: any[]) => (
+                    <View 
+                      key={method.type} 
+                      style={styles.paymentMethodContainer}
+                    >
+                      <View style={styles.paymentLeftSection}>
+                        <View style={[styles.paymentIconContainer, { backgroundColor: getPaymentMethodColor(method.type) }]}>
+                          {getPaymentMethodIcon(method.type)}
+                        </View>
+                        <Text style={styles.paymentMethodName}>
+                          {formatPaymentMethodName(method.type)}
+                        </Text>
+                      </View>
+                      <ScrollView 
+                        horizontal 
+                        showsHorizontalScrollIndicator={false}
+                        style={styles.paymentValueScrollContainer}
+                      >
+                        <Text style={styles.paymentMethodValue}>
+                          {method.type === 'venmo' && '@'}
+                          {method.type === 'cashapp' && '$'}
+                          {method.value}
+                        </Text>
+                      </ScrollView>
+                    </View>
+                  ))
+                }
+              </LinearGradient>
+            )}
             
             {/* Edit Profile Button */}
             <Pressable 
@@ -194,7 +416,7 @@ export default function ProfileScreen() {
                 styles.editProfileButton,
                 {opacity: pressed ? 0.8 : 1}
               ]}
-              onPress={() => console.log('Edit profile')}
+              onPress={handleEditProfile}
             >
               <LinearGradient
                 colors={[Colors.light.tint, '#3DCD84', '#2EBB77']}
@@ -202,7 +424,9 @@ export default function ProfileScreen() {
                 end={{ x: 1, y: 1 }}
                 style={styles.editButtonGradient}
               >
-                <Text style={styles.editButtonText}>Edit Profile</Text>
+                <Text style={styles.editButtonText}>
+                  {hasProfileData ? "Edit Profile" : "Create Your Link"}
+                </Text>
               </LinearGradient>
             </Pressable>
             
@@ -333,6 +557,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     maxWidth: '80%',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
   },
   profileContainer: {
     width: '100%',
@@ -355,6 +580,9 @@ const styles = StyleSheet.create({
         elevation: 6,
       },
     }),
+  },
+  incompleteCard: {
+    borderColor: 'rgba(220,38,38,0.2)',
   },
   cardTitle: {
     fontSize: 18,
@@ -381,6 +609,9 @@ const styles = StyleSheet.create({
     color: Colors.light.tint,
     fontSize: 16,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  incompleteText: {
+    color: 'rgba(220,38,38,1)',
   },
   copyButton: {
     width: 44,
@@ -415,6 +646,31 @@ const styles = StyleSheet.create({
         elevation: 6,
       },
     }),
+  },
+  previewButton: {
+    backgroundColor: 'rgba(74, 111, 161, 0.9)',
+    borderRadius: 30,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: 'rgba(59, 89, 152, 0.5)',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 6,
+      },
+    }),
+  },
+  disabledButton: {
+    backgroundColor: 'rgba(220,38,38,0.9)',
+    opacity: 0.5,
   },
   buttonIcon: {
     marginRight: 8,
@@ -458,6 +714,29 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
   },
+  imageInfoRow: {
+    alignItems: 'center',
+  },
+  profileImageContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  profileImageThumbnail: {
+    width: '100%',
+    height: '100%',
+  },
+  backgroundImageContainer: {
+    width: 100,
+    height: 56, // 16:9 aspect ratio
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  backgroundImageThumbnail: {
+    width: '100%',
+    height: '100%',
+  },
   editProfileButton: {
     borderRadius: 12,
     overflow: 'hidden',
@@ -471,6 +750,16 @@ const styles = StyleSheet.create({
   },
   editButtonText: {
     color: '#000',
+    fontSize: 16,
+    fontFamily: 'Aeonik-Black',
+  },
+  previewButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewButtonText: {
+    color: '#FFFFFF',
     fontSize: 16,
     fontFamily: 'Aeonik-Black',
   },
@@ -506,5 +795,44 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Aeonik-Black',
     marginLeft: 8,
+  },
+  // Payment method styles
+  paymentMethodContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  paymentLeftSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 0.5,
+  },
+  paymentIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  paymentMethodName: {
+    fontSize: 16,
+    color: '#fff',
+    fontFamily: 'Aeonik-Black',
+  },
+  paymentValueScrollContainer: {
+    flex: 1,
+    maxWidth: '50%',
+  },
+  paymentMethodValue: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.7)',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
 });
