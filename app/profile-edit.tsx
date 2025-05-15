@@ -12,6 +12,7 @@ import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useAuth } from '@/contexts/AuthContext';
 import { updateUserProfile } from '@/firebase/firestore';
+import { uploadProfileImage, uploadBackgroundImage } from '@/firebase/storage';
 import { PaymentMethod } from '@/firebase/models';
 
 // Only log in development mode
@@ -199,6 +200,40 @@ export default function ProfileEditScreen() {
         paymentMethods
       });
       
+      // Upload profile image if a new one was selected
+      let profileImageURL_updated = profileImageURL;
+      if (profileImage) {
+        logDebug('Uploading profile image...');
+        try {
+          profileImageURL_updated = await uploadProfileImage(
+            currentUser.uid, 
+            profileImage.uri
+          );
+          logDebug('Profile image uploaded:', profileImageURL_updated);
+        } catch (error) {
+          logDebug('Profile image upload failed:', error);
+          // Continue with the existing local URL if upload fails
+          profileImageURL_updated = profileImage.uri;
+        }
+      }
+      
+      // Upload background image if a new one was selected
+      let backgroundImageURL_updated = backgroundImageURL;
+      if (backgroundImage) {
+        logDebug('Uploading background image...');
+        try {
+          backgroundImageURL_updated = await uploadBackgroundImage(
+            currentUser.uid,
+            backgroundImage.uri
+          );
+          logDebug('Background image uploaded:', backgroundImageURL_updated);
+        } catch (error) {
+          logDebug('Background image upload failed:', error);
+          // Continue with the existing local URL if upload fails
+          backgroundImageURL_updated = backgroundImage.uri;
+        }
+      }
+      
       // Create profile data object for the profile sub-document
       const profileData = {
         name,
@@ -207,11 +242,11 @@ export default function ProfileEditScreen() {
         paymentMethods: paymentMethods,
         // Include profile image URL inside profile if present
         ...(profileImage || profileImageURL ? {
-          profileImageUrl: profileImage ? profileImage.uri : profileImageURL
+          profileImageUrl: profileImage ? profileImageURL_updated : profileImageURL
         } : {}),
         // Include background image URL inside profile if present
         ...(backgroundImage || backgroundImageURL ? {
-          backgroundImageUrl: backgroundImage ? backgroundImage.uri : backgroundImageURL
+          backgroundImageUrl: backgroundImage ? backgroundImageURL_updated : backgroundImageURL
         } : {})
       };
       

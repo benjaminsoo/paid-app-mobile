@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { StyleSheet, ScrollView, View, Text, ActivityIndicator, Pressable, Platform, Share, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -6,10 +6,48 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
+import Constants from 'expo-constants';
 
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useAuth } from '@/contexts/AuthContext';
+
+// Only log in development mode
+const isDevelopment = Constants.expoConfig?.extra?.NODE_ENV === 'development';
+const logDebug = (message: string, data?: any) => {
+  if (isDevelopment) {
+    console.log(message, data);
+  }
+};
+
+// Memoized payment method components for better performance
+const PaymentMethodItem = React.memo(({ method, getColor, getIcon, formatName }: any) => {
+  return (
+    <View 
+      style={styles.paymentMethodContainer}
+    >
+      <View style={styles.paymentLeftSection}>
+        <View style={[styles.paymentIconContainer, { backgroundColor: getColor(method.type) }]}>
+          {getIcon(method.type)}
+        </View>
+        <Text style={styles.paymentMethodName}>
+          {formatName(method.type)}
+        </Text>
+      </View>
+      <ScrollView 
+        horizontal 
+        showsHorizontalScrollIndicator={false}
+        style={styles.paymentValueScrollContainer}
+      >
+        <Text style={styles.paymentMethodValue}>
+          {method.type === 'venmo' && '@'}
+          {method.type === 'cashapp' && '$'}
+          {method.value}
+        </Text>
+      </ScrollView>
+    </View>
+  );
+});
 
 export default function ProfileScreen() {
   const colorScheme = useColorScheme();
@@ -20,13 +58,25 @@ export default function ProfileScreen() {
   const [error, setError] = useState<string | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
   
+  // Use ref to track initialization and prevent duplicate refreshes
+  const profileInitialized = useRef(false);
+  const refreshAttempted = useRef(false);
+  
   // Load user profile data only when component mounts or currentUser changes
   useEffect(() => {
     let isMounted = true;
-    let isLoading = false; // Track if we're already loading data
     
     const loadUserProfile = async () => {
-      if (!currentUser?.uid || isLoading) {
+      // Skip if no user or already refreshing
+      if (!currentUser?.uid) {
+        if (isMounted) {
+          setLoading(false);
+        }
+        return;
+      }
+      
+      // Skip if we've already refreshed and have a profile
+      if (userProfile && profileInitialized.current) {
         if (isMounted) {
           setLoading(false);
         }
@@ -34,30 +84,27 @@ export default function ProfileScreen() {
       }
       
       try {
-        // Set loading flag to prevent duplicate requests
-        isLoading = true;
-        
         if (isMounted) {
           setLoading(true);
         }
         
-        // Only refresh if userProfile is null
-        if (!userProfile) {
+        if (!userProfile && !refreshAttempted.current) {
+          logDebug('Loading user profile for the first time');
+          refreshAttempted.current = true;
           await refreshUserProfile();
         }
         
         if (isMounted) {
           setError(null);
           setLoading(false);
+          profileInitialized.current = true;
         }
       } catch (err: any) {
-        console.error('Error loading user profile:', err);
+        logDebug('Error loading user profile:', err);
         if (isMounted) {
           setError(err.message || 'Unknown error');
           setLoading(false);
         }
-      } finally {
-        isLoading = false;
       }
     };
     
@@ -67,18 +114,21 @@ export default function ProfileScreen() {
     return () => {
       isMounted = false;
     };
-  }, [currentUser, refreshUserProfile, userProfile]); // Include userProfile to track its changes
+  }, [currentUser, refreshUserProfile]); // Remove userProfile dependency to prevent refresh loops
 
-  // Check if profile has been set up
-  const hasProfileData = userProfile?.profile && 
-    (userProfile.profile.name || 
-     userProfile.profile.location || 
-     userProfile.profileImageUrl || 
-     userProfile.profile.backgroundImageUrl ||
-     (userProfile.profile && userProfile.profile.paymentMethods && 
-      userProfile.profile.paymentMethods.some((method: any) => method.value)));
+  // Memoize hasProfileData calculation to prevent recalculations on render
+  const hasProfileData = useMemo(() => {
+    return userProfile?.profile && 
+      (userProfile.profile.name || 
+       userProfile.profile.location || 
+       userProfile.profileImageUrl || 
+       userProfile.profile.backgroundImageUrl ||
+       (userProfile.profile && 
+        userProfile.profile.paymentMethods && 
+        userProfile.profile.paymentMethods.some((method: any) => method.value)));
+  }, [userProfile]);
 
-  const handleCopyLink = async () => {
+  const handleCopyLink = useCallback(async () => {
     if (!userProfile?.username) return;
     
     try {
@@ -90,11 +140,11 @@ export default function ProfileScreen() {
         setLinkCopied(false);
       }, 2000);
     } catch (error) {
-      console.error('Error copying to clipboard:', error);
+      logDebug('Error copying to clipboard:', error);
     }
-  };
+  }, [userProfile?.username]);
 
-  const handleVisitLink = async () => {
+  const handleVisitLink = useCallback(async () => {
     if (!userProfile?.username || !hasProfileData) return;
     
     try {
@@ -103,29 +153,29 @@ export default function ProfileScreen() {
         url: `https://trypaid.io/${userProfile.username}`
       });
     } catch (error) {
-      console.error('Error sharing link:', error);
+      logDebug('Error sharing link:', error);
     }
-  };
+  }, [userProfile?.username, hasProfileData]);
 
-  const handleSignOut = async () => {
+  const handleSignOut = useCallback(async () => {
     try {
       await logout();
       router.replace('/auth/login');
     } catch (error) {
-      console.error('Sign out error:', error);
+      logDebug('Sign out error:', error);
     }
-  };
+  }, [logout, router]);
 
-  const handleEditProfile = () => {
-    // Using the simple push method with correct path
+  const handleEditProfile = useCallback(() => {
     router.push('/profile-edit');
-  };
+  }, [router]);
 
-  const handlePreviewProfile = () => {
+  const handlePreviewProfile = useCallback(() => {
     router.push('/profile-preview');
-  };
+  }, [router]);
 
-  const getPaymentMethodColor = (type: string) => {
+  // Memoize these functions since they don't depend on any state/props
+  const getPaymentMethodColor = useCallback((type: string) => {
     switch (type.toLowerCase()) {
       case 'venmo':
         return '#3D95CE';
@@ -140,9 +190,9 @@ export default function ProfileScreen() {
       default:
         return Colors.light.tint;
     }
-  };
+  }, []);
 
-  const getPaymentMethodIcon = (type: string) => {
+  const getPaymentMethodIcon = useCallback((type: string) => {
     switch (type.toLowerCase()) {
       case 'venmo':
         return <Ionicons name="logo-venmo" size={16} color="#FFFFFF" />;
@@ -157,9 +207,9 @@ export default function ProfileScreen() {
       default:
         return <Ionicons name="wallet-outline" size={16} color="#FFFFFF" />;
     }
-  };
+  }, []);
 
-  const formatPaymentMethodName = (type: string) => {
+  const formatPaymentMethodName = useCallback((type: string) => {
     switch (type.toLowerCase()) {
       case 'venmo':
         return 'Venmo';
@@ -174,7 +224,13 @@ export default function ProfileScreen() {
       default:
         return type.charAt(0).toUpperCase() + type.slice(1);
     }
-  };
+  }, []);
+
+  // Memoize the payment methods list to prevent unnecessary re-renders
+  const paymentMethods = useMemo(() => {
+    if (!userProfile?.profile?.paymentMethods) return [];
+    return userProfile.profile.paymentMethods.filter((method: any) => method.value);
+  }, [userProfile?.profile?.paymentMethods]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -287,6 +343,29 @@ export default function ProfileScreen() {
               </Text>
             </LinearGradient>
             
+            {/* Add Create Link button outside the card when profile is not set up */}
+            {!hasProfileData && (
+              <Pressable 
+                style={({pressed}) => [
+                  styles.createLinkButton,
+                  {opacity: pressed ? 0.8 : 1}
+                ]}
+                onPress={handleEditProfile}
+              >
+                <LinearGradient
+                  colors={[Colors.light.tint, '#3DCD84', '#2EBB77']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.createLinkButtonGradient}
+                >
+                  <View style={styles.createLinkButtonContent}>
+                    <Ionicons name="add-circle-outline" size={18} color="#000" style={styles.buttonIcon} />
+                    <Text style={styles.createLinkButtonText}>Create Your Link</Text>
+                  </View>
+                </LinearGradient>
+              </Pressable>
+            )}
+            
             {/* Account Information Card */}
             <LinearGradient
               colors={['rgba(35,35,35,0.98)', 'rgba(25,25,25,0.95)']}
@@ -366,7 +445,7 @@ export default function ProfileScreen() {
             )}
             
             {/* Payment Methods */}
-            {userProfile.profile && userProfile.profile.paymentMethods && userProfile.profile.paymentMethods.length > 0 && (
+            {userProfile.profile && paymentMethods.length > 0 && (
               <LinearGradient
                 colors={['rgba(35,35,35,0.98)', 'rgba(25,25,25,0.95)']}
                 start={{ x: 0, y: 0 }}
@@ -378,57 +457,37 @@ export default function ProfileScreen() {
                   <Text style={styles.accountHeader}>Payment Methods</Text>
                 </View>
                 
-                {userProfile.profile.paymentMethods
-                  .filter((method: any) => method.value)
-                  .map((method: any, index: number, array: any[]) => (
-                    <View 
-                      key={method.type} 
-                      style={styles.paymentMethodContainer}
-                    >
-                      <View style={styles.paymentLeftSection}>
-                        <View style={[styles.paymentIconContainer, { backgroundColor: getPaymentMethodColor(method.type) }]}>
-                          {getPaymentMethodIcon(method.type)}
-                        </View>
-                        <Text style={styles.paymentMethodName}>
-                          {formatPaymentMethodName(method.type)}
-                        </Text>
-                      </View>
-                      <ScrollView 
-                        horizontal 
-                        showsHorizontalScrollIndicator={false}
-                        style={styles.paymentValueScrollContainer}
-                      >
-                        <Text style={styles.paymentMethodValue}>
-                          {method.type === 'venmo' && '@'}
-                          {method.type === 'cashapp' && '$'}
-                          {method.value}
-                        </Text>
-                      </ScrollView>
-                    </View>
-                  ))
-                }
+                {paymentMethods.map((method: any) => (
+                  <PaymentMethodItem 
+                    key={method.type}
+                    method={method}
+                    getColor={getPaymentMethodColor}
+                    getIcon={getPaymentMethodIcon}
+                    formatName={formatPaymentMethodName}
+                  />
+                ))}
               </LinearGradient>
             )}
             
-            {/* Edit Profile Button */}
-            <Pressable 
-              style={({pressed}) => [
-                styles.editProfileButton,
-                {opacity: pressed ? 0.8 : 1}
-              ]}
-              onPress={handleEditProfile}
-            >
-              <LinearGradient
-                colors={[Colors.light.tint, '#3DCD84', '#2EBB77']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.editButtonGradient}
+            {/* Edit Profile Button - only show if profile has data */}
+            {hasProfileData && (
+              <Pressable 
+                style={({pressed}) => [
+                  styles.editProfileButton,
+                  {opacity: pressed ? 0.8 : 1}
+                ]}
+                onPress={handleEditProfile}
               >
-                <Text style={styles.editButtonText}>
-                  {hasProfileData ? "Edit Profile" : "Create Your Link"}
-                </Text>
-              </LinearGradient>
-            </Pressable>
+                <LinearGradient
+                  colors={[Colors.light.tint, '#3DCD84', '#2EBB77']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.editButtonGradient}
+                >
+                  <Text style={styles.editButtonText}>Edit Profile</Text>
+                </LinearGradient>
+              </Pressable>
+            )}
             
             {/* Sign Out Button */}
             <Pressable 
@@ -467,6 +526,27 @@ export default function ProfileScreen() {
             <Text style={styles.emptyStateText}>
               Your profile information could not be loaded.
             </Text>
+            
+            {/* Sign Out Button */}
+            <Pressable 
+              style={({pressed}) => [
+                styles.emptyStateSignOutButton,
+                {opacity: pressed ? 0.8 : 1}
+              ]}
+              onPress={handleSignOut}
+            >
+              <LinearGradient
+                colors={['#FF5B5B', '#E04040']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.signOutButtonGradient}
+              >
+                <View style={styles.signOutButtonContent}>
+                  <Ionicons name="log-out-outline" size={20} color="#FFFFFF" />
+                  <Text style={styles.signOutButtonText}>Sign Out</Text>
+                </View>
+              </LinearGradient>
+            </Pressable>
           </View>
         )}
       </ScrollView>
@@ -558,6 +638,24 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     maxWidth: '80%',
     fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+    marginBottom: 30,
+  },
+  emptyStateSignOutButton: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    width: '60%',
+    maxWidth: 200,
+    ...Platform.select({
+      ios: {
+        shadowColor: 'rgba(255, 91, 91, 0.5)',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 6,
+      },
+    }),
   },
   profileContainer: {
     width: '100%',
@@ -625,6 +723,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     marginTop: 6,
+    marginBottom: 0,
   },
   visitButton: {
     backgroundColor: Colors.light.tint,
@@ -834,5 +933,36 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: 'rgba(255,255,255,0.7)',
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  createLinkButton: {
+    borderRadius: 30,
+    overflow: 'hidden',
+    marginBottom: 20,
+    marginTop: 4,
+    ...Platform.select({
+      ios: {
+        shadowColor: Colors.light.tint,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 6,
+      },
+    }),
+  },
+  createLinkButtonGradient: {
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+  },
+  createLinkButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  createLinkButtonText: {
+    color: '#000',
+    fontSize: 16,
+    fontFamily: 'Aeonik-Black',
   },
 });

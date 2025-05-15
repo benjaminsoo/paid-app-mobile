@@ -15,28 +15,26 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { doc, updateDoc, setDoc, getDoc } from 'firebase/firestore';
+import { db } from '@/firebase/config';
 
 import { ThemedText } from '@/components/ThemedText';
 import { Colors } from '@/constants/Colors';
 import { useAuth } from '@/contexts/AuthContext';
+import { updateUserProfile } from '@/firebase/firestore';
 
 export default function SignupScreen() {
   const router = useRouter();
   const { signup } = useAuth();
   
   const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   
   async function handleSignup() {
-    if (!email || !password || !confirmPassword) {
+    if (!email || !username || !password) {
       Alert.alert('Error', 'Please fill in all fields');
-      return;
-    }
-    
-    if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
       return;
     }
     
@@ -45,15 +43,62 @@ export default function SignupScreen() {
       return;
     }
     
+    // Username validation - only allow alphanumeric and underscore
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+      Alert.alert('Error', 'Username can only contain letters, numbers, and underscores');
+      return;
+    }
+    
     try {
       setLoading(true);
-      await signup(email, password);
+      
+      // Check if username is already taken
+      const usernameDocRef = doc(db, 'usernames', username.toLowerCase());
+      const usernameDoc = await getDoc(usernameDocRef);
+      
+      if (usernameDoc.exists()) {
+        Alert.alert('Username Taken', 'This username is already in use. Please choose another one.');
+        setLoading(false);
+        return;
+      }
+      
+      // Create Firebase auth user
+      const userCredential = await signup(email, password);
+      const userId = userCredential.user.uid;
+      
+      // Create initial user profile in Firestore
+      await updateUserProfile(userId, {
+        name: '',
+        location: '',
+        paymentMethods: [
+          { type: 'venmo', value: '' },
+          { type: 'zelle', value: '', valueType: 'email' },
+          { type: 'cashapp', value: '' },
+          { type: 'paypal', value: '', valueType: 'email' },
+          { type: 'applepay', value: '' }
+        ]
+      });
+      
+      // Set username at the root level
+      const userRef = doc(db, 'users', userId);
+      await updateDoc(userRef, {
+        username: username,
+        email: email
+      });
+      
+      // Create a document in the usernames collection
+      // This is used to ensure username uniqueness and for lookups
+      await setDoc(usernameDocRef, {
+        uid: userId,
+        createdAt: new Date().toISOString()
+      });
+      
       router.replace('/(tabs)');
     } catch (error) {
       console.error('Signup error:', error);
       Alert.alert(
         'Signup Failed', 
-        'Could not create account. Email may already be in use.'
+        'Could not create account. Email may already be in use or username may be taken.'
       );
     } finally {
       setLoading(false);
@@ -108,6 +153,27 @@ export default function SignupScreen() {
             
             <View style={styles.formSection}>
               <View style={styles.labelContainer}>
+                <Ionicons name="person-outline" size={18} color={Colors.light.tint} style={styles.labelIcon} />
+                <Text style={styles.label}>Username</Text>
+              </View>
+              <TextInput
+                style={styles.input}
+                placeholder="Choose a username"
+                placeholderTextColor="rgba(255,255,255,0.3)"
+                value={username}
+                onChangeText={setUsername}
+                autoCapitalize="none"
+                selectionColor={Colors.light.tint}
+              />
+              <Text style={styles.helpText}>
+                This will be your payment link: trypaid.io/{username}
+              </Text>
+            </View>
+            
+            <View style={styles.divider} />
+            
+            <View style={styles.formSection}>
+              <View style={styles.labelContainer}>
                 <Ionicons name="lock-closed-outline" size={18} color={Colors.light.tint} style={styles.labelIcon} />
                 <Text style={styles.label}>Password</Text>
               </View>
@@ -117,24 +183,6 @@ export default function SignupScreen() {
                 placeholderTextColor="rgba(255,255,255,0.3)"
                 value={password}
                 onChangeText={setPassword}
-                secureTextEntry
-                selectionColor={Colors.light.tint}
-              />
-            </View>
-            
-            <View style={styles.divider} />
-            
-            <View style={styles.formSection}>
-              <View style={styles.labelContainer}>
-                <Ionicons name="checkmark-circle-outline" size={18} color={Colors.light.tint} style={styles.labelIcon} />
-                <Text style={styles.label}>Confirm Password</Text>
-              </View>
-              <TextInput
-                style={styles.input}
-                placeholder="Confirm your password"
-                placeholderTextColor="rgba(255,255,255,0.3)"
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
                 secureTextEntry
                 selectionColor={Colors.light.tint}
               />
@@ -262,6 +310,13 @@ const styles = StyleSheet.create({
     color: '#fff',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
+  },
+  helpText: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.5)',
+    marginTop: 8,
+    marginLeft: 2,
+    fontStyle: 'italic',
   },
   divider: {
     height: 1,

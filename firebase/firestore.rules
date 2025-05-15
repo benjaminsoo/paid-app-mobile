@@ -26,10 +26,20 @@ service cloud.firestore {
     
     // Usernames collection (for username lookup)
     match /usernames/{username} {
-      // Anyone can read usernames, but only the owner can write
+      // Allow anyone to read usernames for checking availability
       allow read: if true;
-      allow write: if request.auth != null && 
-                    (resource == null || resource.data.uid == request.auth.uid);
+      
+      // For creating new username entries:
+      // 1. User must be authenticated
+      // 2. Allow creation if the document doesn't exist yet
+      // 3. Allow updates only if you own the username (uid matches auth.uid)
+      // 4. Ensure data has a uid field matching the current user
+      allow create: if request.auth != null && 
+                      !exists(/databases/$(database)/documents/usernames/$(username)) && 
+                      request.resource.data.uid == request.auth.uid;
+                      
+      allow update, delete: if request.auth != null &&
+                             resource.data.uid == request.auth.uid;
     }
   }
 } 
