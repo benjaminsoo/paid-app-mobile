@@ -42,15 +42,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 24,
     fontWeight: '600',
+    fontFamily: 'Aeonik-Black',
   },
   title: {
     fontSize: 32,
-    fontWeight: 'bold',
+    fontFamily: 'Aeonik-Black',
     lineHeight: 32,
   },
   subtitle: {
     fontSize: 20,
-    fontWeight: 'bold',
+    fontFamily: 'Aeonik-Black',
   },
   link: {
     lineHeight: 30,

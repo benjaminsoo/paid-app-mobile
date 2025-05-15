@@ -1,0 +1,368 @@
+import React, { useState } from 'react';
+import { StyleSheet, TextInput, Pressable, View, KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import { Stack, useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+
+import { ThemedText } from '@/components/ThemedText';
+import { ThemedView } from '@/components/ThemedView';
+import { Colors } from '@/constants/Colors';
+import { useColorScheme } from '@/hooks/useColorScheme';
+import { useAuth } from '@/contexts/AuthContext';
+import { createDebt } from '@/firebase/firestore';
+import eventEmitter from '@/utils/eventEmitter';
+
+export default function AddDebtScreen() {
+  const router = useRouter();
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const { currentUser } = useAuth();
+  
+  const [name, setName] = useState('');
+  const [amount, setAmount] = useState('');
+  const [description, setDescription] = useState('');
+  const [loading, setLoading] = useState(false);
+  
+  const validateInputs = () => {
+    if (!name.trim()) {
+      Alert.alert('Missing Information', 'Please enter who owes you money.');
+      return false;
+    }
+    
+    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+      Alert.alert('Invalid Amount', 'Please enter a valid amount greater than 0.');
+      return false;
+    }
+    
+    return true;
+  };
+  
+  const handleAddDebt = async () => {
+    if (!validateInputs()) return;
+    if (!currentUser) {
+      Alert.alert('Authentication Error', 'You must be logged in to add debts.');
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      
+      const debtData = {
+        debtorName: name.trim(),
+        amount: parseFloat(amount),
+        description: description.trim(),
+      };
+      
+      console.log('Creating debt with data:', debtData);
+      
+      const newDebt = await createDebt(currentUser.uid, debtData);
+      console.log('Successfully created debt:', newDebt);
+      
+      // Emit an event that a debt was added - this will trigger a refresh on the home screen
+      eventEmitter.emit('DEBT_ADDED', newDebt);
+      
+      Alert.alert(
+        'Debt Added', 
+        `Successfully added debt of $${amount} from ${name}.`,
+        [{ 
+          text: 'OK', 
+          onPress: () => {
+            console.log('Navigating back to home after debt creation');
+            router.back();
+          }
+        }]
+      );
+    } catch (error) {
+      console.error('Add debt error:', error);
+      Alert.alert(
+        'Error Adding Debt', 
+        'There was a problem saving your debt. Please try again.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  return (
+    <SafeAreaView style={styles.container}>
+      <StatusBar style="light" />
+      
+      <LinearGradient
+        colors={['rgba(18,18,18,0.98)', 'rgba(28,28,28,0.95)']}
+        style={styles.backgroundGradient}
+      />
+      
+      <View style={styles.header}>
+        <Pressable 
+          style={styles.backButton}
+          onPress={() => router.back()}
+        >
+          <Ionicons name="chevron-back" size={24} color={Colors.light.tint} />
+        </Pressable>
+        <ThemedText type="subtitle" style={styles.headerTitle}>Add Debt</ThemedText>
+        <View style={{width: 24}} />
+      </View>
+      
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+      >
+        <ScrollView 
+          style={styles.scrollContainer} 
+          contentContainerStyle={styles.contentContainer}
+          showsVerticalScrollIndicator={false}
+        >
+          <LinearGradient
+            colors={['rgba(35,35,35,0.98)', 'rgba(25,25,25,0.95)']}
+            style={styles.formCard}
+          >
+            <View style={styles.formSection}>
+              <View style={styles.labelContainer}>
+                <Ionicons name="person-outline" size={18} color={Colors.light.tint} style={styles.labelIcon} />
+                <ThemedText style={styles.label}>Who owes you?</ThemedText>
+              </View>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter name"
+                placeholderTextColor="rgba(255,255,255,0.3)"
+                value={name}
+                onChangeText={setName}
+                autoCapitalize="words"
+                selectionColor={Colors.light.tint}
+              />
+            </View>
+            
+            <View style={styles.divider} />
+            
+            <View style={styles.formSection}>
+              <View style={styles.labelContainer}>
+                <Ionicons name="cash-outline" size={18} color={Colors.light.tint} style={styles.labelIcon} />
+                <ThemedText style={styles.label}>How much?</ThemedText>
+              </View>
+              <View style={styles.amountContainer}>
+                <ThemedText style={styles.currencySymbol}>$</ThemedText>
+                <TextInput
+                  style={styles.amountInput}
+                  placeholder="0.00"
+                  placeholderTextColor="rgba(255,255,255,0.3)"
+                  keyboardType="decimal-pad"
+                  value={amount}
+                  onChangeText={setAmount}
+                  selectionColor={Colors.light.tint}
+                />
+              </View>
+            </View>
+            
+            <View style={styles.divider} />
+            
+            <View style={styles.formSection}>
+              <View style={styles.labelContainer}>
+                <Ionicons name="document-text-outline" size={18} color={Colors.light.tint} style={styles.labelIcon} />
+                <ThemedText style={styles.label}>What's it for? <ThemedText style={styles.optional}>(Optional)</ThemedText></ThemedText>
+              </View>
+              <TextInput
+                style={styles.textArea}
+                placeholder="e.g., Dinner, Movie tickets, etc."
+                placeholderTextColor="rgba(255,255,255,0.3)"
+                multiline
+                numberOfLines={4}
+                value={description}
+                onChangeText={setDescription}
+                selectionColor={Colors.light.tint}
+              />
+            </View>
+          </LinearGradient>
+          
+          <Pressable 
+            style={({pressed}) => [
+              styles.addButton,
+              {opacity: (pressed || loading) ? 0.8 : 1}
+            ]}
+            onPress={handleAddDebt}
+            disabled={loading}
+          >
+            <LinearGradient
+              colors={[Colors.light.tint, '#3DCD84', '#2EBB77']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.buttonGradient}
+            >
+              <View style={styles.buttonContent}>
+                {loading ? (
+                  <ActivityIndicator color="#000" size="small" style={styles.buttonIcon} />
+                ) : (
+                  <Ionicons name="checkmark-circle" size={18} color="#000" style={styles.buttonIcon} />
+                )}
+                <ThemedText style={styles.addButtonText}>
+                  {loading ? 'Saving...' : 'Save Debt'}
+                </ThemedText>
+              </View>
+            </LinearGradient>
+          </Pressable>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#121212',
+  },
+  backgroundGradient: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  headerTitle: {
+    fontSize: 18,
+    color: '#fff',
+    fontFamily: 'Aeonik-Black',
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(74, 226, 144, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scrollContainer: {
+    flex: 1,
+  },
+  contentContainer: {
+    padding: 20,
+    paddingBottom: 80,
+  },
+  formCard: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    marginBottom: 24,
+    ...Platform.select({
+      ios: {
+        shadowColor: Colors.light.tint,
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
+  },
+  formSection: {
+    padding: 20,
+  },
+  labelContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  labelIcon: {
+    marginRight: 10,
+  },
+  label: {
+    fontSize: 16,
+    fontFamily: 'Aeonik-Black',
+    color: '#fff',
+  },
+  optional: {
+    fontFamily: 'System',
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.5)',
+    fontWeight: 'normal',
+  },
+  input: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    color: '#fff',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    marginHorizontal: 20,
+  },
+  textArea: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    color: '#fff',
+    minHeight: 100,
+    textAlignVertical: 'top',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  amountContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  currencySymbol: {
+    fontSize: 24,
+    fontFamily: 'Aeonik-Black',
+    marginRight: 8,
+    color: '#fff',
+  },
+  amountInput: {
+    flex: 1,
+    padding: 16,
+    fontSize: 24,
+    color: '#fff',
+  },
+  addButton: {
+    borderRadius: 30,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: Colors.light.tint,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 6,
+      },
+    }),
+  },
+  buttonGradient: {
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 30,
+  },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonIcon: {
+    marginRight: 8,
+  },
+  addButtonText: {
+    color: '#000',
+    fontSize: 16,
+    fontFamily: 'Aeonik-Black',
+  },
+}); 

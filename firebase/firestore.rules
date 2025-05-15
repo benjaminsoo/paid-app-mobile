@@ -1,0 +1,35 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Base rule - default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      // Allow users to read and write their own document
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // Allow access to the user's debts subcollection
+      match /debts/{debtId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+    
+    // Allow any authenticated user to read the users collection
+    // This is needed for profile lookups
+    match /users/{userId} {
+      allow read: if request.auth != null;
+    }
+    
+    // Usernames collection (for username lookup)
+    match /usernames/{username} {
+      // Anyone can read usernames, but only the owner can write
+      allow read: if true;
+      allow write: if request.auth != null && 
+                    (resource == null || resource.data.uid == request.auth.uid);
+    }
+  }
+} 
