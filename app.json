@@ -10,7 +10,10 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.paidmobile"
+      "bundleIdentifier": "com.anonymous.paidmobile",
+      "infoPlist": {
+        "NSContactsUsageDescription": "This app needs access to your contacts to select people who owe you money."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -18,7 +21,8 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.anonymous.paidmobile"
+      "package": "com.anonymous.paidmobile",
+      "permissions": ["READ_CONTACTS"]
     },
     "web": {
       "bundler": "metro",
@@ -36,7 +40,13 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "This app needs access to your contacts to select people who owe you money."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

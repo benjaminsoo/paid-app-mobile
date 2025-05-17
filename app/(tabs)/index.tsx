@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useCallback, memo } from 'react';
-import { StyleSheet, View, ScrollView, Text, Platform, ActivityIndicator, FlatList, Pressable } from 'react-native';
+import { StyleSheet, View, ScrollView, Text, Platform, ActivityIndicator, FlatList, Pressable, Linking, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as ImagePicker from 'expo-image-picker';
+import * as Clipboard from 'expo-clipboard';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
@@ -18,11 +20,76 @@ import eventEmitter from '@/utils/eventEmitter';
 // Create a memoized Debt Item component to prevent unnecessary re-renders
 const DebtItem = memo(({ 
   item, 
-  onMarkPaid 
+  onMarkPaid,
+  userProfile
 }: { 
   item: Debt, 
-  onMarkPaid: (id: string) => void 
+  onMarkPaid: (id: string) => void,
+  userProfile: any
 }) => {
+  // Check if user has a valid payment link
+  const hasValidPaymentLink = useCallback(() => {
+    if (!userProfile) return false;
+    
+    // Check if username exists
+    if (!userProfile.username) return false;
+    
+    // Check if user has a profile setup with at least one of these fields
+    const hasProfileData = userProfile.profile && 
+      (userProfile.profile.name || 
+       userProfile.profile.location || 
+       userProfile.profileImageUrl || 
+       userProfile.profile.backgroundImageUrl ||
+       (userProfile.profile.paymentMethods && 
+        userProfile.profile.paymentMethods.some((method: any) => method.value)));
+        
+    return hasProfileData;
+  }, [userProfile]);
+
+  // Function to handle the remind button press
+  const handleRemind = useCallback(() => {
+    // Create base SMS message text
+    let message = `Hey, just a reminder that you owe me $${item.amount.toFixed(2)}${item.description ? ` for ${item.description}` : ''}.`;
+    
+    // Add payment link if available
+    if (userProfile?.username && hasValidPaymentLink()) {
+      message += `\n\nPay here: trypaid.io/${userProfile.username}`;
+    }
+    
+    // Encode the message for use in the URL
+    const encodedMessage = encodeURIComponent(message);
+    
+    // If we have a phone number, use it to fill the recipient and the message
+    if (item.phoneNumber) {
+      const phoneNumber = item.phoneNumber.replace(/\D/g, ''); // Remove non-numeric characters
+      
+      // Create the SMS URL for opening the messages app with number and message
+      const url = Platform.OS === 'ios' 
+        ? `sms:${phoneNumber}&body=${encodedMessage}`
+        : `sms:${phoneNumber}?body=${encodedMessage}`;
+      
+      Linking.openURL(url).catch(err => {
+        console.error('Error opening messages app:', err);
+      });
+    } else {
+      // If no phone number, just open the messages app with the message body
+      const url = Platform.OS === 'ios' 
+        ? `sms:&body=${encodedMessage}`
+        : `sms:?body=${encodedMessage}`;
+        
+      Linking.openURL(url).catch(err => {
+        console.error('Error opening messages app:', err);
+        
+        // Fallback to clipboard if linking fails
+        Clipboard.setString(message);
+        Alert.alert(
+          'Message Copied',
+          'The reminder message has been copied to your clipboard.'
+        );
+      });
+    }
+  }, [item, userProfile, hasValidPaymentLink]);
+
   return (
     <View style={[styles.debtItem, item.isPaid && styles.paidDebtItem]}>
       <View style={styles.debtInfo}>
@@ -31,24 +98,46 @@ const DebtItem = memo(({
         {item.description ? (
           <Text style={styles.debtDescription}>{item.description}</Text>
         ) : null}
-        <Text style={styles.debtDate}>
-          {item.isPaid 
-            ? `Paid on ${new Date(item.paidAt!).toLocaleDateString()}` 
-            : `Added on ${new Date(item.createdAt).toLocaleDateString()}`}
-        </Text>
+        <View style={styles.debtFooter}>
+          <Text style={styles.debtDate}>
+            {item.isPaid 
+              ? `Paid on ${new Date(item.paidAt!).toLocaleDateString()}` 
+              : `Added on ${new Date(item.createdAt).toLocaleDateString()}`}
+          </Text>
+          {item.phoneNumber && (
+            <View style={styles.phoneContainer}>
+              <Ionicons name="call-outline" size={12} color={Colors.light.tint} />
+            </View>
+          )}
+        </View>
       </View>
       
       {!item.isPaid && (
-        <Pressable 
-          style={({pressed}) => [
-            styles.markPaidButton,
-            {opacity: pressed ? 0.8 : 1}
-          ]}
-          onPress={() => onMarkPaid(item.id!)}
-        >
-          <Ionicons name="checkmark-circle" size={20} color={Colors.light.tint} />
-          <Text style={styles.markPaidText}>Mark Paid</Text>
-        </Pressable>
+        <View style={styles.buttonsContainer}>
+          <Pressable 
+            style={({pressed}) => [
+              styles.actionButton,
+              styles.remindButton,
+              {opacity: pressed ? 0.8 : 1}
+            ]}
+            onPress={handleRemind}
+          >
+            <Ionicons name="chatbubble-outline" size={16} color={Colors.light.tint} />
+            <Text style={styles.actionButtonText}>Remind</Text>
+          </Pressable>
+          
+          <Pressable 
+            style={({pressed}) => [
+              styles.actionButton,
+              styles.markPaidButton,
+              {opacity: pressed ? 0.8 : 1}
+            ]}
+            onPress={() => onMarkPaid(item.id!)}
+          >
+            <Ionicons name="checkmark-circle" size={16} color={Colors.light.tint} />
+            <Text style={styles.actionButtonText}>Mark Paid</Text>
+          </Pressable>
+        </View>
       )}
     </View>
   );
@@ -58,7 +147,7 @@ export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const router = useRouter();
   const isDark = colorScheme === 'dark';
-  const { currentUser } = useAuth();
+  const { currentUser, userProfile } = useAuth();
   
   const [debts, setDebts] = useState<Debt[]>([]);
   const [loading, setLoading] = useState(true);
@@ -125,10 +214,10 @@ export default function HomeScreen() {
     }
   };
   
-  // Render a debt item - use the memoized component
+  // Render a debt item - use the memoized component with userProfile
   const renderDebtItem = useCallback(({ item }: { item: Debt }) => {
-    return <DebtItem item={item} onMarkPaid={handleMarkPaid} />;
-  }, [handleMarkPaid]);
+    return <DebtItem item={item} onMarkPaid={handleMarkPaid} userProfile={userProfile} />;
+  }, [handleMarkPaid, userProfile]);
   
   // Optimize the effect to avoid unnecessary refreshes
   useEffect(() => {
@@ -198,6 +287,54 @@ export default function HomeScreen() {
           Paid.
         </ThemedText>
         
+        <View style={styles.headerButtonsContainer}>
+          {/* Receipt Splitter Button */}
+          <Pressable 
+            style={({pressed}) => [
+              styles.receiptButton,
+              {opacity: pressed ? 0.8 : 1}
+            ]}
+            onPress={async () => {
+              try {
+                // Request camera permission
+                const { status } = await ImagePicker.requestCameraPermissionsAsync();
+                
+                if (status !== 'granted') {
+                  console.error('Camera permission not granted');
+                  return;
+                }
+                
+                // Launch camera
+                const result = await ImagePicker.launchCameraAsync({
+                  mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                  quality: 0.8,
+                  allowsEditing: true,
+                  aspect: [4, 3]
+                });
+                
+                if (!result.canceled && result.assets.length > 0) {
+                  // Navigate to receipt splitter screen with the image
+                  router.push({
+                    pathname: '/receipt-splitter',
+                    params: { imageUri: result.assets[0].uri }
+                  });
+                }
+              } catch (error) {
+                console.error('Camera or navigation error:', error);
+              }
+            }}
+          >
+            <LinearGradient
+              colors={[Colors.light.tint, '#3DCD84', '#2EBB77']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.receiptButtonGradient}
+            >
+              <Ionicons name="receipt-outline" size={20} color="#000" />
+            </LinearGradient>
+          </Pressable>
+          
+          {/* Add Debt Button */}
         <Pressable 
           style={({pressed}) => [
             styles.addButton,
@@ -219,6 +356,7 @@ export default function HomeScreen() {
             </View>
           </LinearGradient>
         </Pressable>
+        </View>
       </View>
       
       <ScrollView 
@@ -379,7 +517,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 16,
     opacity: 0.7,
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-light',
+    fontFamily: 'AeonikBlack-Regular',
   },
   debugAmount: {
     fontSize: 42,
@@ -402,7 +540,7 @@ const styles = StyleSheet.create({
   },
   debugPeopleText: {
     fontSize: 14,
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+    fontFamily: 'AeonikBlack-Regular',
   },
   debtListContainer: {
     flex: 1,
@@ -468,12 +606,14 @@ const styles = StyleSheet.create({
     marginTop: 16,
     fontSize: 16,
     opacity: 0.7,
+    fontFamily: 'AeonikBlack-Regular',
   },
   loadingSubText: {
     color: '#fff',
     marginTop: 8,
     fontSize: 14,
     opacity: 0.7,
+    fontFamily: 'AeonikBlack-Regular',
   },
   errorContainer: {
     padding: 40,
@@ -486,6 +626,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     opacity: 0.7,
     textAlign: 'center',
+    fontFamily: 'AeonikBlack-Regular',
   },
   emptyState: {
     flex: 1,
@@ -511,7 +652,7 @@ const styles = StyleSheet.create({
     maxWidth: '80%',
     fontSize: 15,
     lineHeight: 22,
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+    fontFamily: 'AeonikBlack-Regular',
   },
   debtList: {
     padding: 16,
@@ -533,6 +674,7 @@ const styles = StyleSheet.create({
   },
   debtInfo: {
     flex: 1,
+    paddingRight: 12,
   },
   debtorName: {
     color: '#fff',
@@ -550,19 +692,48 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.7)',
     fontSize: 14,
     marginBottom: 8,
+    fontFamily: 'AeonikBlack-Regular',
+    paddingRight: 4,
+  },
+  debtFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   debtDate: {
     color: 'rgba(255,255,255,0.5)',
     fontSize: 12,
+    fontFamily: 'AeonikBlack-Regular',
   },
-  markPaidButton: {
+  phoneContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(74, 226, 144, 0.15)',
+    marginLeft: 8,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    backgroundColor: 'rgba(74, 226, 144, 0.1)',
+    borderRadius: 4,
+  },
+  buttonsContainer: {
+    flexDirection: 'column',
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    gap: 8,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: 8,
     borderRadius: 8,
+    minWidth: 100,
+    justifyContent: 'center',
   },
-  markPaidText: {
+  markPaidButton: {
+    backgroundColor: 'rgba(74, 226, 144, 0.15)',
+  },
+  remindButton: {
+    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+  },
+  actionButtonText: {
     color: Colors.light.tint,
     fontSize: 12,
     fontFamily: 'Aeonik-Black',
@@ -600,5 +771,33 @@ const styles = StyleSheet.create({
     color: '#000',
     fontSize: 14,
     fontFamily: 'Aeonik-Black',
+  },
+  headerButtonsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  receiptButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    overflow: 'hidden',
+    marginRight: 12,
+    ...Platform.select({
+      ios: {
+        shadowColor: Colors.light.tint,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 6,
+      },
+    }),
+  },
+  receiptButtonGradient: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

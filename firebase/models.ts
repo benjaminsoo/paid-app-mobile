@@ -10,6 +10,7 @@ export interface Debt {
   debtorName: string;        // Name of the person who owes money
   amount: number;            // Amount owed in dollars
   description?: string;      // Optional description of what the debt is for
+  phoneNumber?: string;      // Optional phone number for contact/reminders
   createdAt: string;         // ISO string timestamp when debt was created
   updatedAt: string;         // ISO string timestamp when debt was last updated
   isPaid: boolean;           // Whether the debt has been paid

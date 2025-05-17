@@ -80,7 +80,7 @@ export const AuthProvider = ({ children }) => {
     let isMounted = true;
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (isMounted) {
-        setCurrentUser(user);
+      setCurrentUser(user);
       }
       
       if (user && isMounted) {
@@ -90,7 +90,7 @@ export const AuthProvider = ({ children }) => {
       }
       
       if (isMounted) {
-        setLoading(false);
+      setLoading(false);
       }
     });
 

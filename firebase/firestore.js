@@ -57,9 +57,10 @@ export const fetchDocument = async (collectionName, documentId) => {
  * @param {string} debtData.debtorName - Name of person who owes money
  * @param {number} debtData.amount - Amount owed
  * @param {string} [debtData.description] - Optional description
+ * @param {string} [debtData.phoneNumber] - Optional phone number for reminders
  * @returns {Promise<Object>} - Created debt with ID
  */
-export const createDebt = async (userId, { debtorName, amount, description = '' }) => {
+export const createDebt = async (userId, { debtorName, amount, description = '', phoneNumber = '' }) => {
   try {
     if (!userId) {
       throw new Error('userId is required');
@@ -79,6 +80,7 @@ export const createDebt = async (userId, { debtorName, amount, description = '' 
       debtorName: String(debtorName),
       amount: numericAmount,
       description: String(description || ''),
+      phoneNumber: String(phoneNumber || ''),
       createdAt: now,
       updatedAt: now,
       isPaid: false,
@@ -203,7 +205,7 @@ export const deleteDebt = async (userId, debtId) => {
     console.error('Error deleting debt:', error);
     throw error;
   }
-};
+}; 
 
 /**
  * Update user profile data

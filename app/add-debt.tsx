@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StyleSheet, TextInput, Pressable, View, KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Contacts from 'expo-contacts';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
@@ -13,17 +14,37 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 import { useAuth } from '@/contexts/AuthContext';
 import { createDebt } from '@/firebase/firestore';
 import eventEmitter from '@/utils/eventEmitter';
+import ContactsModal from '@/components/ContactsModal';
 
 export default function AddDebtScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const { currentUser } = useAuth();
+  const params = useLocalSearchParams();
   
-  const [name, setName] = useState('');
-  const [amount, setAmount] = useState('');
-  const [description, setDescription] = useState('');
+  // Use params if available (from receipt splitter)
+  const [name, setName] = useState(params.debtorName as string || '');
+  const [amount, setAmount] = useState(params.amount as string || '');
+  const [description, setDescription] = useState(params.description as string || '');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [loading, setLoading] = useState(false);
+  const [contactsModalVisible, setContactsModalVisible] = useState(false);
+  
+  // Handle contact selection
+  const handleSelectContact = (contact: Contacts.Contact) => {
+    const fullName = `${contact.firstName || ''} ${contact.lastName || ''}`.trim();
+    if (fullName) {
+      setName(fullName);
+    }
+    
+    // Extract and store phone number if available
+    if (contact.phoneNumbers && contact.phoneNumbers.length > 0) {
+      setPhoneNumber(contact.phoneNumbers[0].number || '');
+    } else {
+      setPhoneNumber(''); // Reset if no phone number
+    }
+  };
   
   const validateInputs = () => {
     if (!name.trim()) {
@@ -53,6 +74,7 @@ export default function AddDebtScreen() {
         debtorName: name.trim(),
         amount: parseFloat(amount),
         description: description.trim(),
+        phoneNumber: phoneNumber.trim(),
       };
       
       console.log('Creating debt with data:', debtData);
@@ -63,9 +85,11 @@ export default function AddDebtScreen() {
       // Emit an event that a debt was added - this will trigger a refresh on the home screen
       eventEmitter.emit('DEBT_ADDED', newDebt);
       
+      const phoneNumberInfo = phoneNumber ? ` (Phone: ${phoneNumber})` : '';
+      
       Alert.alert(
         'Debt Added', 
-        `Successfully added debt of $${amount} from ${name}.`,
+        `Successfully added debt of $${amount} from ${name}${phoneNumberInfo}.`,
         [{ 
           text: 'OK', 
           onPress: () => {
@@ -88,6 +112,13 @@ export default function AddDebtScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="light" />
+      
+      {/* Contacts Modal */}
+      <ContactsModal
+        visible={contactsModalVisible}
+        onClose={() => setContactsModalVisible(false)}
+        onSelectContact={handleSelectContact}
+      />
       
       <LinearGradient
         colors={['rgba(18,18,18,0.98)', 'rgba(28,28,28,0.95)']}
@@ -123,15 +154,46 @@ export default function AddDebtScreen() {
                 <Ionicons name="person-outline" size={18} color={Colors.light.tint} style={styles.labelIcon} />
                 <ThemedText style={styles.label}>Who owes you?</ThemedText>
               </View>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter name"
-                placeholderTextColor="rgba(255,255,255,0.3)"
-                value={name}
-                onChangeText={setName}
-                autoCapitalize="words"
-                selectionColor={Colors.light.tint}
-              />
+              
+              <View style={styles.nameInputContainer}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter name"
+                  placeholderTextColor="rgba(255,255,255,0.3)"
+                  value={name}
+                  onChangeText={setName}
+                  autoCapitalize="words"
+                  selectionColor={Colors.light.tint}
+                />
+                
+                <Pressable
+                  style={({pressed}) => [
+                    styles.contactButton,
+                    {opacity: pressed ? 0.8 : 1}
+                  ]}
+                  onPress={() => setContactsModalVisible(true)}
+                >
+                  <LinearGradient
+                    colors={['rgba(74, 226, 144, 0.2)', 'rgba(74, 226, 144, 0.1)']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.contactButtonGradient}
+                  >
+                    <Ionicons name="people" size={18} color={Colors.light.tint} />
+                  </LinearGradient>
+                </Pressable>
+              </View>
+              
+              <Pressable
+                style={({pressed}) => [
+                  styles.selectContactButton,
+                  {opacity: pressed ? 0.8 : 1}
+                ]}
+                onPress={() => setContactsModalVisible(true)}
+              >
+                <Ionicons name="person-add-outline" size={16} color={Colors.light.tint} style={styles.selectContactIcon} />
+                <ThemedText style={styles.selectContactText}>Select from Contacts</ThemedText>
+              </Pressable>
             </View>
             
             <View style={styles.divider} />
@@ -281,12 +343,17 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   optional: {
-    fontFamily: 'System',
+    fontFamily: 'AeonikBlack-Regular',
     fontSize: 14,
     color: 'rgba(255,255,255,0.5)',
     fontWeight: 'normal',
   },
+  nameInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   input: {
+    flex: 1,
     backgroundColor: 'rgba(255,255,255,0.08)',
     borderRadius: 12,
     padding: 16,
@@ -294,6 +361,40 @@ const styles = StyleSheet.create({
     color: '#fff',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
+    fontFamily: 'AeonikBlack-Regular',
+  },
+  contactButton: {
+    width: 48,
+    height: 48,
+    marginLeft: 12,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  contactButtonGradient: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  selectContactButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: 'rgba(74, 226, 144, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(74, 226, 144, 0.15)',
+  },
+  selectContactIcon: {
+    marginRight: 8,
+  },
+  selectContactText: {
+    color: Colors.light.tint,
+    fontSize: 14,
+    fontFamily: 'AeonikBlack-Regular',
   },
   divider: {
     height: 1,
@@ -310,6 +411,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
+    fontFamily: 'AeonikBlack-Regular',
   },
   amountContainer: {
     flexDirection: 'row',
@@ -331,6 +433,7 @@ const styles = StyleSheet.create({
     padding: 16,
     fontSize: 24,
     color: '#fff',
+    fontFamily: 'AeonikBlack-Regular',
   },
   addButton: {
     borderRadius: 30,

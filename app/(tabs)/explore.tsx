@@ -85,7 +85,7 @@ export default function ProfileScreen() {
       
       try {
         if (isMounted) {
-          setLoading(true);
+        setLoading(true);
         }
         
         if (!userProfile && !refreshAttempted.current) {
@@ -102,7 +102,7 @@ export default function ProfileScreen() {
       } catch (err: any) {
         logDebug('Error loading user profile:', err);
         if (isMounted) {
-          setError(err.message || 'Unknown error');
+        setError(err.message || 'Unknown error');
           setLoading(false);
         }
       }
@@ -133,12 +133,12 @@ export default function ProfileScreen() {
     
     try {
       await Clipboard.setStringAsync(`trypaid.io/${userProfile.username}`);
-      setLinkCopied(true);
-      
-      // Reset copied state after 2 seconds
-      setTimeout(() => {
-        setLinkCopied(false);
-      }, 2000);
+    setLinkCopied(true);
+    
+    // Reset copied state after 2 seconds
+    setTimeout(() => {
+      setLinkCopied(false);
+    }, 2000);
     } catch (error) {
       logDebug('Error copying to clipboard:', error);
     }
@@ -471,22 +471,22 @@ export default function ProfileScreen() {
             
             {/* Edit Profile Button - only show if profile has data */}
             {hasProfileData && (
-              <Pressable 
-                style={({pressed}) => [
-                  styles.editProfileButton,
-                  {opacity: pressed ? 0.8 : 1}
-                ]}
+            <Pressable 
+              style={({pressed}) => [
+                styles.editProfileButton,
+                {opacity: pressed ? 0.8 : 1}
+              ]}
                 onPress={handleEditProfile}
+            >
+              <LinearGradient
+                colors={[Colors.light.tint, '#3DCD84', '#2EBB77']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.editButtonGradient}
               >
-                <LinearGradient
-                  colors={[Colors.light.tint, '#3DCD84', '#2EBB77']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.editButtonGradient}
-                >
-                  <Text style={styles.editButtonText}>Edit Profile</Text>
-                </LinearGradient>
-              </Pressable>
+                <Text style={styles.editButtonText}>Edit Profile</Text>
+              </LinearGradient>
+            </Pressable>
             )}
             
             {/* Sign Out Button */}
@@ -596,6 +596,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
     fontSize: 16,
     opacity: 0.7,
+    fontFamily: 'AeonikBlack-Regular',
   },
   errorContainer: {
     padding: 40,
@@ -608,6 +609,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     opacity: 0.7,
     textAlign: 'center',
+    fontFamily: 'AeonikBlack-Regular',
   },
   emptyState: {
     padding: 40,
@@ -637,7 +639,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     maxWidth: '80%',
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+    fontFamily: 'AeonikBlack-Regular',
     marginBottom: 30,
   },
   emptyStateSignOutButton: {
@@ -706,7 +708,7 @@ const styles = StyleSheet.create({
   linkText: {
     color: Colors.light.tint,
     fontSize: 16,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontFamily: 'AeonikBlack-Regular',
   },
   incompleteText: {
     color: 'rgba(220,38,38,1)',
@@ -724,6 +726,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginTop: 6,
     marginBottom: 0,
+    fontFamily: 'AeonikBlack-Regular',
   },
   visitButton: {
     backgroundColor: Colors.light.tint,
@@ -806,12 +809,13 @@ const styles = StyleSheet.create({
     width: 100,
     fontSize: 14,
     color: 'rgba(255,255,255,0.6)',
+    fontFamily: 'AeonikBlack-Regular',
   },
   infoValue: {
     flex: 1,
     fontSize: 14,
     color: '#fff',
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+    fontFamily: 'AeonikBlack-Regular',
   },
   imageInfoRow: {
     alignItems: 'center',
@@ -932,7 +936,7 @@ const styles = StyleSheet.create({
   paymentMethodValue: {
     fontSize: 14,
     color: 'rgba(255,255,255,0.7)',
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontFamily: 'AeonikBlack-Regular',
   },
   createLinkButton: {
     borderRadius: 30,
@@ -964,5 +968,34 @@ const styles = StyleSheet.create({
     color: '#000',
     fontSize: 16,
     fontFamily: 'Aeonik-Black',
+  },
+  debugTitle: {
+    fontWeight: '400',
+    fontSize: 16,
+    marginBottom: 16,
+    opacity: 0.7,
+    fontFamily: 'AeonikBlack-Regular',
+  },
+  debugPeopleText: {
+    fontSize: 14,
+    fontFamily: 'AeonikBlack-Regular',
+  },
+  debtDescription: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 14,
+    marginBottom: 8,
+    fontFamily: 'AeonikBlack-Regular',
+  },
+  debtDate: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 12,
+    fontFamily: 'AeonikBlack-Regular',
+  },
+  loadingSubText: {
+    color: '#fff',
+    marginTop: 8,
+    fontSize: 14,
+    opacity: 0.7,
+    fontFamily: 'AeonikBlack-Regular',
   },
 });
