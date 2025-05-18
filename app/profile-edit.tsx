@@ -41,6 +41,7 @@ export default function ProfileEditScreen() {
   // Form data
   const [name, setName] = useState('');
   const [location, setLocation] = useState('');
+  const [preferredPaymentMethod, setPreferredPaymentMethod] = useState<string>('');
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([
     { type: 'venmo', value: '' },
     { type: 'zelle', value: '', valueType: 'email' },
@@ -63,6 +64,7 @@ export default function ProfileEditScreen() {
     if (userProfile.profile) {
       setName(userProfile.profile.name || '');
       setLocation(userProfile.profile.location || '');
+      setPreferredPaymentMethod(userProfile.profile.preferredPaymentMethod || '');
       
       // Check for profile image in both locations (profile sub-document and root)
       const profileImgUrl = userProfile.profile.profileImageUrl || userProfile.profileImageUrl;
@@ -238,6 +240,7 @@ export default function ProfileEditScreen() {
       const profileData = {
         name,
         location,
+        preferredPaymentMethod,
         // Include payment methods inside the profile object
         paymentMethods: paymentMethods,
         // Include profile image URL inside profile if present
@@ -404,6 +407,58 @@ export default function ProfileEditScreen() {
                 {backgroundImage || backgroundImageURL ? 'Change Background' : 'Select Background'}
               </Text>
             </TouchableOpacity>
+          </View>
+        </View>
+        
+        {/* Preferred Payment Method */}
+        <View style={styles.sectionContainer}>
+          <Text style={styles.sectionTitle}>Preferred Payment Method</Text>
+          <Text style={styles.sectionDescription}>
+            Select your preferred payment method that will be highlighted in your profile and suggested first to people who owe you money.
+          </Text>
+          
+          <View style={styles.preferredMethodContainer}>
+            {paymentMethods.map((method, index) => (
+              <Pressable 
+                key={method.type}
+                style={[
+                  styles.preferredMethodButton,
+                  preferredPaymentMethod === method.type && styles.preferredMethodButtonActive
+                ]}
+                onPress={() => setPreferredPaymentMethod(method.type)}
+              >
+                <View style={[
+                  styles.paymentIcon, 
+                  { 
+                    backgroundColor: 
+                      method.type === 'venmo' ? '#3D95CE' : 
+                      method.type === 'zelle' ? '#6D1ED4' : 
+                      method.type === 'cashapp' ? '#00D632' : 
+                      method.type === 'paypal' ? '#0079C1' : 
+                      method.type === 'applepay' ? '#000' : '#555'
+                  }
+                ]}>
+                  {method.type === 'venmo' && <Ionicons name="logo-venmo" size={18} color="#fff" />}
+                  {method.type === 'zelle' && <Text style={styles.paymentIconText}>Z</Text>}
+                  {method.type === 'cashapp' && <Ionicons name="cash-outline" size={18} color="#fff" />}
+                  {method.type === 'paypal' && <Ionicons name="logo-paypal" size={18} color="#fff" />}
+                  {method.type === 'applepay' && <Ionicons name="logo-apple" size={18} color="#fff" />}
+                </View>
+                <Text style={[
+                  styles.preferredMethodText,
+                  preferredPaymentMethod === method.type && styles.preferredMethodTextActive
+                ]}>
+                  {method.type === 'venmo' ? 'Venmo' : 
+                   method.type === 'zelle' ? 'Zelle' : 
+                   method.type === 'cashapp' ? 'Cash App' : 
+                   method.type === 'paypal' ? 'PayPal' : 
+                   method.type === 'applepay' ? 'Apple Pay' : method.type}
+                </Text>
+                {preferredPaymentMethod === method.type && (
+                  <Ionicons name="checkmark-circle" size={20} color={Colors.light.tint} style={styles.preferredIcon} />
+                )}
+              </Pressable>
+            ))}
           </View>
         </View>
         
@@ -850,5 +905,42 @@ const styles = StyleSheet.create({
     color: '#000',
     fontSize: 16,
     fontFamily: 'Aeonik-Black',
+  },
+  preferredMethodContainer: {
+    marginTop: 8,
+  },
+  preferredMethodButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: 'rgba(35,35,35,0.98)',
+    borderRadius: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  preferredMethodButtonActive: {
+    borderColor: Colors.light.tint,
+    backgroundColor: 'rgba(74, 226, 144, 0.1)',
+  },
+  preferredMethodText: {
+    color: '#fff',
+    fontSize: 16,
+    marginLeft: 12,
+    flex: 1,
+  },
+  preferredMethodTextActive: {
+    fontFamily: 'Aeonik-Black',
+    color: Colors.light.tint,
+  },
+  preferredIcon: {
+    marginLeft: 8,
+  },
+  sectionDescription: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 14,
+    marginBottom: 16,
+    lineHeight: 20,
   },
 }); 

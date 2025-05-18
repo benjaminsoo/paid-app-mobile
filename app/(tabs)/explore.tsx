@@ -21,7 +21,7 @@ const logDebug = (message: string, data?: any) => {
 };
 
 // Memoized payment method components for better performance
-const PaymentMethodItem = React.memo(({ method, getColor, getIcon, formatName }: any) => {
+const PaymentMethodItem = React.memo(({ method, getColor, getIcon, formatName, preferred }: any) => {
   return (
     <View 
       style={styles.paymentMethodContainer}
@@ -416,6 +416,22 @@ export default function ProfileScreen() {
                   </View>
                 )}
                 
+                {userProfile.profile.preferredPaymentMethod && (
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Preferred Payment:</Text>
+                    <Text style={styles.infoValue}>
+                      {
+                        userProfile.profile.preferredPaymentMethod === 'venmo' ? 'Venmo' :
+                        userProfile.profile.preferredPaymentMethod === 'zelle' ? 'Zelle' :
+                        userProfile.profile.preferredPaymentMethod === 'cashapp' ? 'Cash App' :
+                        userProfile.profile.preferredPaymentMethod === 'paypal' ? 'PayPal' :
+                        userProfile.profile.preferredPaymentMethod === 'applepay' ? 'Apple Pay' :
+                        userProfile.profile.preferredPaymentMethod
+                      }
+                    </Text>
+                  </View>
+                )}
+                
                 {userProfile.profile.profileImageUrl && (
                   <View style={[styles.infoRow, styles.imageInfoRow]}>
                     <Text style={styles.infoLabel}>Profile Image:</Text>
@@ -464,6 +480,7 @@ export default function ProfileScreen() {
                     getColor={getPaymentMethodColor}
                     getIcon={getPaymentMethodIcon}
                     formatName={formatPaymentMethodName}
+                    preferred={userProfile.profile.preferredPaymentMethod === method.type}
                   />
                 ))}
               </LinearGradient>
@@ -997,5 +1014,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     opacity: 0.7,
     fontFamily: 'AeonikBlack-Regular',
+  },
+  preferredPaymentMethodContainer: {
+    borderColor: Colors.light.tint,
+    borderWidth: 1,
+  },
+  preferredBadge: {
+    fontSize: 12,
+    color: Colors.light.tint,
+    fontFamily: 'Aeonik-Black',
   },
 });

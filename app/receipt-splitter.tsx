@@ -23,7 +23,7 @@ import * as Contacts from 'expo-contacts';
 import { Colors } from '@/constants/Colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { processReceiptImage, ReceiptData, ReceiptItem as GroqReceiptItem } from '../services/groqService';
-import { createDebt } from '@/firebase/firestore';
+import { createDebt, createDebtGroup, addDebtToGroup } from '@/firebase/firestore';
 import eventEmitter from '@/utils/eventEmitter';
 import ContactsModal from '@/components/ContactsModal';
 
@@ -201,7 +201,7 @@ export default function ReceiptSplitterScreen() {
       setStoreName(data.store || 'Unknown Store');
       
       // Update description with store name
-      setDescription(`Receipt from ${data.store || 'Unknown Store'}`);
+      setDescription(`${data.store || 'Unknown Store'}`);
       
       // Convert items to our format
       const formattedItems = data.items.map((item: GroqReceiptItem, index: number) => ({
@@ -378,42 +378,87 @@ export default function ReceiptSplitterScreen() {
         
         return {
           debtorName: person.name,
-          amount: safeFormat(personAmount),
+          amount: parseFloat(safeFormat(personAmount)),
           description: personDescription,
           phoneNumber: person.phoneNumber || ''
         };
       });
       
-      // Create all debts one after another
-      const createdDebts = [];
-      for (const debt of debtData) {
+      // Create a group debt if there are 2 or more people
+      if (peopleWithItems.length > 1) {
         try {
-          // Call your createDebt function here to save to database
-          const newDebt = await createDebt(currentUser.uid, {
-            debtorName: debt.debtorName,
-            amount: parseFloat(debt.amount),
-            description: debt.description,
-            phoneNumber: debt.phoneNumber
+          // Create a new debt group
+          const groupName = `${description} (${peopleWithItems.length} people)`;
+          const groupDescription = `Receipt split from ${storeName || 'Unknown Store'} on ${new Date().toLocaleDateString()}`;
+          
+          const newGroup = await createDebtGroup(currentUser.uid, {
+            name: groupName,
+            description: groupDescription
+          }) as { id: string };
+          
+          console.log('Successfully created group:', newGroup);
+          
+          // Add each person's debt to the group
+          const promises = debtData.map(debt => {
+            return addDebtToGroup(
+              currentUser.uid,
+              newGroup.id as string,
+              {
+                debtorName: debt.debtorName,
+                amount: debt.amount,
+                description: debt.description,
+                phoneNumber: debt.phoneNumber
+              }
+            );
           });
           
-          // Add to created debts
-          createdDebts.push(newDebt);
+          await Promise.all(promises);
+          
+          // Emit event to update the home screen
+          eventEmitter.emit('DEBT_ADDED', newGroup);
+          
+          // Show success message
+          Alert.alert(
+            'Group Debt Created',
+            `Successfully created a group debt with ${peopleWithItems.length} people for ${storeName || description}.`,
+            [{ text: 'OK', onPress: () => router.back() }]
+          );
         } catch (error) {
-          console.error('Error creating debt:', error);
+          console.error('Error creating group debt:', error);
+          setError('Failed to create group debt from receipt');
         }
+      } else {
+        // Create individual debt (original behavior for single person)
+        const createdDebts = [];
+        for (const debt of debtData) {
+          try {
+            // Call your createDebt function here to save to database
+            const newDebt = await createDebt(currentUser.uid, {
+              debtorName: debt.debtorName,
+              amount: debt.amount,
+              description: debt.description,
+              phoneNumber: debt.phoneNumber
+            });
+            
+            // Add to created debts
+            createdDebts.push(newDebt);
+          } catch (error) {
+            console.error('Error creating debt:', error);
+          }
+        }
+        
+        // Emit event for each created debt
+        createdDebts.forEach(debt => {
+          eventEmitter.emit('DEBT_ADDED', debt);
+        });
+        
+        // Show success message after all debts are created
+        Alert.alert(
+          'Debt Created',
+          `Successfully created debt for ${peopleWithItems[0].name}.`,
+          [{ text: 'OK', onPress: () => router.back() }]
+        );
       }
-      
-      // Emit event for each created debt
-      createdDebts.forEach(debt => {
-        eventEmitter.emit('DEBT_ADDED', debt);
-      });
-      
-      // Show success message after all debts are created
-      Alert.alert(
-        'Debts Created',
-        `Successfully created ${debtData.length} debt${debtData.length === 1 ? '' : 's'}.`,
-        [{ text: 'OK', onPress: () => router.back() }]
-      );
     } catch (error) {
       console.error('Error creating debts:', error);
       setError('Failed to create debts from receipt');

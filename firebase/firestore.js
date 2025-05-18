@@ -1,4 +1,4 @@
-import { collection, getDocs, doc, getDoc, query, where, orderBy, limit, addDoc, updateDoc, deleteDoc, Timestamp, setDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, query, where, orderBy, limit, addDoc, updateDoc, deleteDoc, Timestamp, setDoc, writeBatch, increment, runTransaction } from 'firebase/firestore';
 import { db } from './config';
 
 /**
@@ -58,9 +58,10 @@ export const fetchDocument = async (collectionName, documentId) => {
  * @param {number} debtData.amount - Amount owed
  * @param {string} [debtData.description] - Optional description
  * @param {string} [debtData.phoneNumber] - Optional phone number for reminders
+ * @param {string} [debtData.groupId] - Optional group ID
  * @returns {Promise<Object>} - Created debt with ID
  */
-export const createDebt = async (userId, { debtorName, amount, description = '', phoneNumber = '' }) => {
+export const createDebt = async (userId, { debtorName, amount, description = '', phoneNumber = '', groupId = null }) => {
   try {
     if (!userId) {
       throw new Error('userId is required');
@@ -87,9 +88,33 @@ export const createDebt = async (userId, { debtorName, amount, description = '',
       userId: String(userId)
     };
     
+    // Add groupId if present
+    if (groupId) {
+      debtData.groupId = String(groupId);
+    }
+    
     console.log('Debt data being saved:', debtData);
     const docRef = await addDoc(userDebtsRef, debtData);
     console.log(`Debt created with ID: ${docRef.id}`);
+    
+    // If part of a group, update the group's totals
+    if (groupId) {
+      try {
+        // Update the group document to add this debt ID and update totals
+        const groupRef = doc(db, 'users', userId, 'debtGroups', groupId);
+        await updateDoc(groupRef, {
+          updatedAt: now,
+          totalAmount: increment(numericAmount),
+          debtIds: increment(1) // Simplified approach
+        });
+        
+        // Get all debt IDs for the group and set them correctly
+        await updateGroupTotals(userId, groupId);
+      } catch (groupError) {
+        console.error('Error updating debt group after creating debt:', groupError);
+        // Continue with debt creation even if group update fails
+      }
+    }
     
     return {
       id: docRef.id,
@@ -151,18 +176,39 @@ export const fetchUserDebts = async (userId) => {
  * Mark a debt as paid
  * @param {string} userId - ID of the user who is owed money
  * @param {string} debtId - ID of the debt to mark as paid
+ * @param {boolean} isPaid - Whether the debt is paid
  * @returns {Promise<void>}
  */
-export const markDebtAsPaid = async (userId, debtId) => {
+export const markDebtAsPaid = async (userId, debtId, isPaid = true) => {
   try {
     const debtRef = doc(db, 'users', userId, 'debts', debtId);
     const now = new Date().toISOString();
     
+    // Get the debt data to check for groupId
+    const debtSnap = await getDoc(debtRef);
+    if (!debtSnap.exists()) {
+      throw new Error(`Debt ${debtId} not found`);
+    }
+    
+    const debtData = debtSnap.data();
+    const { groupId } = debtData;
+    
+    // Update the debt
     await updateDoc(debtRef, {
-      isPaid: true,
-      paidAt: now,
+      isPaid: isPaid,
+      paidAt: isPaid ? now : null,
       updatedAt: now,
     });
+    
+    // If the debt is part of a group, update the group totals
+    if (groupId) {
+      try {
+        await updateGroupTotals(userId, groupId);
+      } catch (groupError) {
+        console.error('Error updating debt group after marking debt as paid:', groupError);
+        // Continue with debt update even if group update fails
+      }
+    }
   } catch (error) {
     console.error('Error marking debt as paid:', error);
     throw error;
@@ -200,12 +246,33 @@ export const updateDebt = async (userId, debtId, updateData) => {
 export const deleteDebt = async (userId, debtId) => {
   try {
     const debtRef = doc(db, 'users', userId, 'debts', debtId);
+    
+    // Get the debt data to check for groupId
+    const debtSnap = await getDoc(debtRef);
+    if (!debtSnap.exists()) {
+      throw new Error(`Debt ${debtId} not found`);
+    }
+    
+    const debtData = debtSnap.data();
+    const { groupId } = debtData;
+    
+    // Delete the debt
     await deleteDoc(debtRef);
+    
+    // If the debt is part of a group, update the group totals
+    if (groupId) {
+      try {
+        await updateGroupTotals(userId, groupId);
+      } catch (groupError) {
+        console.error('Error updating debt group after deleting debt:', groupError);
+        // Continue with debt deletion even if group update fails
+      }
+    }
   } catch (error) {
     console.error('Error deleting debt:', error);
     throw error;
   }
-}; 
+};
 
 /**
  * Update user profile data
@@ -318,6 +385,374 @@ export const updatePaymentMethods = async (userId, paymentMethods) => {
     };
   } catch (error) {
     console.error('Error updating payment methods:', error);
+    throw error;
+  }
+};
+
+/**
+ * Create a new debt group for a user
+ * @param {string} userId - ID of the user who is owed money
+ * @param {Object} groupData - Group information
+ * @param {string} groupData.name - Name of the debt group
+ * @param {string} [groupData.description] - Optional description
+ * @returns {Promise<Object>} - Created debt group with ID
+ */
+export const createDebtGroup = async (userId, { name, description = '' }) => {
+  try {
+    if (!userId) {
+      throw new Error('userId is required');
+    }
+    
+    console.log(`Creating debt group for user ${userId}`);
+    const userGroupsRef = collection(db, 'users', userId, 'debtGroups');
+    const now = new Date().toISOString();
+    
+    const groupData = {
+      name: String(name),
+      description: String(description || ''),
+      createdAt: now,
+      updatedAt: now,
+      isCompleted: false,
+      totalAmount: 0,
+      paidAmount: 0,
+      debtIds: [],
+      userId: String(userId)
+    };
+    
+    console.log('Group data being saved:', groupData);
+    const docRef = await addDoc(userGroupsRef, groupData);
+    console.log(`Debt group created with ID: ${docRef.id}`);
+    
+    return {
+      id: docRef.id,
+      ...groupData,
+    };
+  } catch (error) {
+    console.error('Error creating debt group:', error);
+    throw error;
+  }
+};
+
+/**
+ * Add a debt to a debt group
+ * @param {string} userId - ID of the user who is owed money
+ * @param {string} groupId - ID of the debt group
+ * @param {Object} debtData - Debt information
+ * @returns {Promise<Object>} - Created debt with ID
+ */
+export const addDebtToGroup = async (userId, groupId, debtData) => {
+  try {
+    if (!userId || !groupId) {
+      throw new Error('userId and groupId are required');
+    }
+    
+    // Start a batch operation to ensure atomicity
+    const batch = writeBatch(db);
+    const now = new Date().toISOString();
+    
+    // Create the debt with groupId
+    const userDebtsRef = collection(db, 'users', userId, 'debts');
+    const debtWithGroup = {
+      ...debtData,
+      createdAt: now,
+      updatedAt: now,
+      isPaid: false,
+      userId: String(userId),
+      groupId: String(groupId)
+    };
+    
+    // Ensure proper data types
+    const numericAmount = Number(debtWithGroup.amount);
+    if (isNaN(numericAmount)) {
+      throw new Error('Invalid amount: must be a number');
+    }
+    debtWithGroup.amount = numericAmount;
+    
+    // Add debt to Firestore
+    const debtRef = doc(collection(db, 'users', userId, 'debts'));
+    batch.set(debtRef, debtWithGroup);
+    
+    // Update the debt group
+    const groupRef = doc(db, 'users', userId, 'debtGroups', groupId);
+    batch.update(groupRef, {
+      updatedAt: now,
+      totalAmount: increment(numericAmount),
+      debtIds: increment(1) // Firestore array union would be better but using increment for simplicity
+    });
+    
+    // Commit the batch
+    await batch.commit();
+    
+    // Get the updated group data
+    const groupSnap = await getDoc(groupRef);
+    const groupData = groupSnap.data();
+    
+    // Ensure we have the correct debtIds array by getting it directly
+    const debtsQuery = query(userDebtsRef, where('groupId', '==', groupId));
+    const debtsSnap = await getDocs(debtsQuery);
+    const debtIds = debtsSnap.docs.map(doc => doc.id);
+    
+    // Update the group with the correct debtIds
+    await updateDoc(groupRef, {
+      debtIds: debtIds
+    });
+    
+    return {
+      id: debtRef.id,
+      ...debtWithGroup,
+    };
+  } catch (error) {
+    console.error('Error adding debt to group:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update a debt group's totals based on its debts
+ * @param {string} userId - ID of the user who is owed money
+ * @param {string} groupId - ID of the debt group to update
+ * @returns {Promise<void>}
+ */
+export const updateGroupTotals = async (userId, groupId) => {
+  try {
+    if (!userId || !groupId) {
+      throw new Error('userId and groupId are required');
+    }
+    
+    // Get all debts in the group
+    const userDebtsRef = collection(db, 'users', userId, 'debts');
+    const debtsQuery = query(userDebtsRef, where('groupId', '==', groupId));
+    const debtsSnap = await getDocs(debtsQuery);
+    
+    let totalAmount = 0;
+    let paidAmount = 0;
+    let allPaid = true;
+    const debtIds = [];
+    
+    debtsSnap.forEach(doc => {
+      const debt = doc.data();
+      debtIds.push(doc.id);
+      totalAmount += debt.amount;
+      
+      if (debt.isPaid) {
+        paidAmount += debt.amount;
+      } else {
+        allPaid = false;
+      }
+    });
+    
+    // Update the group document
+    const groupRef = doc(db, 'users', userId, 'debtGroups', groupId);
+    const now = new Date().toISOString();
+    
+    await updateDoc(groupRef, {
+      updatedAt: now,
+      totalAmount: totalAmount,
+      paidAmount: paidAmount,
+      isCompleted: allPaid,
+      debtIds: debtIds
+    });
+    
+    console.log(`Debt group ${groupId} totals updated`);
+  } catch (error) {
+    console.error('Error updating debt group totals:', error);
+    throw error;
+  }
+};
+
+/**
+ * Remove a debt from a debt group
+ * @param {string} userId - ID of the user who is owed money
+ * @param {string} groupId - ID of the debt group
+ * @param {string} debtId - ID of the debt to remove
+ * @returns {Promise<void>}
+ */
+export const removeDebtFromGroup = async (userId, groupId, debtId) => {
+  try {
+    if (!userId || !groupId || !debtId) {
+      throw new Error('userId, groupId, and debtId are required');
+    }
+    
+    // Get the debt to determine its amount
+    const debtRef = doc(db, 'users', userId, 'debts', debtId);
+    const debtSnap = await getDoc(debtRef);
+    
+    if (!debtSnap.exists()) {
+      throw new Error(`Debt ${debtId} not found`);
+    }
+    
+    const debt = debtSnap.data();
+    const amount = debt.amount;
+    const isPaid = debt.isPaid;
+    
+    // Use a transaction to ensure consistency
+    await runTransaction(db, async (transaction) => {
+      // Remove the groupId from the debt
+      transaction.update(debtRef, { 
+        groupId: null,
+        updatedAt: new Date().toISOString()
+      });
+      
+      // Update the group
+      const groupRef = doc(db, 'users', userId, 'debtGroups', groupId);
+      const groupSnap = await transaction.get(groupRef);
+      
+      if (!groupSnap.exists()) {
+        throw new Error(`Debt group ${groupId} not found`);
+      }
+      
+      const groupData = groupSnap.data();
+      let newTotalAmount = groupData.totalAmount - amount;
+      let newPaidAmount = isPaid ? groupData.paidAmount - amount : groupData.paidAmount;
+      const newDebtIds = groupData.debtIds.filter(id => id !== debtId);
+      
+      // Ensure we don't have negative amounts
+      newTotalAmount = Math.max(0, newTotalAmount);
+      newPaidAmount = Math.max(0, newPaidAmount);
+      
+      // Update the group totals
+      transaction.update(groupRef, {
+        totalAmount: newTotalAmount,
+        paidAmount: newPaidAmount,
+        debtIds: newDebtIds,
+        isCompleted: newDebtIds.length > 0 ? newPaidAmount >= newTotalAmount : true,
+        updatedAt: new Date().toISOString()
+      });
+    });
+    
+    console.log(`Debt ${debtId} removed from group ${groupId}`);
+  } catch (error) {
+    console.error('Error removing debt from group:', error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a debt group (with option to keep or delete its debts)
+ * @param {string} userId - ID of the user who is owed money
+ * @param {string} groupId - ID of the debt group to delete
+ * @param {boolean} [keepDebts=true] - Whether to keep the debts (just remove groupId) or delete them
+ * @returns {Promise<void>}
+ */
+export const deleteDebtGroup = async (userId, groupId, keepDebts = true) => {
+  try {
+    if (!userId || !groupId) {
+      throw new Error('userId and groupId are required');
+    }
+    
+    // Get all debts in the group
+    const userDebtsRef = collection(db, 'users', userId, 'debts');
+    const debtsQuery = query(userDebtsRef, where('groupId', '==', groupId));
+    const debtsSnap = await getDocs(debtsQuery);
+    
+    // Batch operation to ensure atomicity
+    const batch = writeBatch(db);
+    
+    // Process all debts in the group
+    debtsSnap.forEach(debtDoc => {
+      const debtRef = doc(db, 'users', userId, 'debts', debtDoc.id);
+      
+      if (keepDebts) {
+        // Just remove groupId reference
+        batch.update(debtRef, { 
+          groupId: null,
+          updatedAt: new Date().toISOString()
+        });
+      } else {
+        // Delete the debt entirely
+        batch.delete(debtRef);
+      }
+    });
+    
+    // Delete the group
+    const groupRef = doc(db, 'users', userId, 'debtGroups', groupId);
+    batch.delete(groupRef);
+    
+    // Commit the batch
+    await batch.commit();
+    
+    console.log(`Debt group ${groupId} deleted, debts ${keepDebts ? 'kept' : 'deleted'}`);
+  } catch (error) {
+    console.error('Error deleting debt group:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get all debt groups for a user
+ * @param {string} userId - ID of the user who is owed money
+ * @returns {Promise<Array>} - Array of debt groups
+ */
+export const getDebtGroups = async (userId) => {
+  try {
+    if (!userId) {
+      throw new Error('userId is required');
+    }
+    
+    const userGroupsRef = collection(db, 'users', userId, 'debtGroups');
+    const q = query(userGroupsRef, orderBy('createdAt', 'desc'));
+    
+    const querySnapshot = await getDocs(q);
+    const groups = [];
+    
+    querySnapshot.forEach((doc) => {
+      groups.push({
+        id: doc.id,
+        ...doc.data()
+      });
+    });
+    
+    return groups;
+  } catch (error) {
+    console.error('Error getting debt groups:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get a specific debt group with its debts
+ * @param {string} userId - ID of the user who is owed money
+ * @param {string} groupId - ID of the debt group
+ * @returns {Promise<Object>} - Debt group with array of debts
+ */
+export const getDebtGroupWithDebts = async (userId, groupId) => {
+  try {
+    if (!userId || !groupId) {
+      throw new Error('userId and groupId are required');
+    }
+    
+    // Get the group
+    const groupRef = doc(db, 'users', userId, 'debtGroups', groupId);
+    const groupSnap = await getDoc(groupRef);
+    
+    if (!groupSnap.exists()) {
+      throw new Error(`Debt group ${groupId} not found`);
+    }
+    
+    const groupData = {
+      id: groupSnap.id,
+      ...groupSnap.data()
+    };
+    
+    // Get all debts in the group
+    const userDebtsRef = collection(db, 'users', userId, 'debts');
+    const debtsQuery = query(userDebtsRef, where('groupId', '==', groupId));
+    const debtsSnap = await getDocs(debtsQuery);
+    
+    const debts = [];
+    debtsSnap.forEach(doc => {
+      debts.push({
+        id: doc.id,
+        ...doc.data()
+      });
+    });
+    
+    // Add debts to group data
+    groupData.debts = debts;
+    
+    return groupData;
+  } catch (error) {
+    console.error('Error getting debt group with debts:', error);
     throw error;
   }
 }; 

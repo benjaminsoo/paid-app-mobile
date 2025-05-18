@@ -13,9 +13,10 @@ import { ThemedView } from '@/components/ThemedView';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useAuth } from '@/contexts/AuthContext';
-import { fetchUserDebts, markDebtAsPaid } from '@/firebase/firestore';
-import { Debt } from '@/firebase/models';
+import { fetchUserDebts, markDebtAsPaid, getDebtGroups, getDebtGroupWithDebts, deleteDebtGroup } from '@/firebase/firestore';
+import { Debt, DebtGroup } from '@/firebase/models';
 import eventEmitter from '@/utils/eventEmitter';
+import GroupDebtCard from '@/components/GroupDebtCard';
 
 // Create a memoized Debt Item component to prevent unnecessary re-renders
 const DebtItem = memo(({ 
@@ -150,39 +151,76 @@ export default function HomeScreen() {
   const { currentUser, userProfile } = useAuth();
   
   const [debts, setDebts] = useState<Debt[]>([]);
+  const [groups, setGroups] = useState<(DebtGroup & { debts?: Debt[] })[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0); // Used to force refresh
   
-  // Calculate total amount owed
+  // Calculate total amount owed (individual debts only, not in groups)
   const totalOwed = debts
-    .filter(debt => !debt.isPaid)
+    .filter(debt => !debt.isPaid && !debt.groupId) // Only count non-group debts
     .reduce((sum, debt) => sum + debt.amount, 0);
   
-  // Count of people who owe money
+  // Add group debt totals
+  const totalGroupOwed = groups
+    .reduce((sum, group) => sum + (group.totalAmount - group.paidAmount), 0);
+  
+  // Total combined owed
+  const combinedTotalOwed = totalOwed + totalGroupOwed;
+  
+  // Count of people who owe money (individual debts only)
   const uniqueDebtors = new Set(
     debts
-      .filter(debt => !debt.isPaid)
+      .filter(debt => !debt.isPaid && !debt.groupId)
       .map(debt => debt.debtorName.toLowerCase())
   );
   
-  // Function to load debts
-  const loadDebts = useCallback(async () => {
+  // Add group debtors
+  groups.forEach(group => {
+    if (group.debts) {
+      group.debts
+        .filter(debt => !debt.isPaid)
+        .forEach(debt => uniqueDebtors.add(debt.debtorName.toLowerCase()));
+    }
+  });
+  
+  // Function to load debts and groups
+  const loadData = useCallback(async () => {
     if (!currentUser) return;
     
     try {
       setLoading(true);
+      
+      // Load individual debts
       const userDebts = await fetchUserDebts(currentUser.uid);
-      console.log('Fetched debts:', JSON.stringify(userDebts, null, 2));
       setDebts(userDebts);
+      
+      // Load debt groups
+      const userGroups = await getDebtGroups(currentUser.uid);
+      
+      // For each group, load its debts
+      const groupsWithDebts = await Promise.all(
+        userGroups.map(async (group) => {
+          try {
+            const groupWithDebts = await getDebtGroupWithDebts(currentUser.uid, group.id!);
+            return groupWithDebts;
+          } catch (err) {
+            console.error(`Error loading debts for group ${group.id}:`, err);
+            // Return the group without debts if there was an error
+            return { ...group, debts: [] };
+          }
+        })
+      );
+      
+      setGroups(groupsWithDebts);
       setError(null);
     } catch (err: any) {
-      console.error('Error loading debts:', err);
+      console.error('Error loading data:', err);
       // Show a user-friendly error message based on the error type
       if (err.code === 'permission-denied') {
         setError('Permission denied. Please check your Firestore security rules.');
       } else {
-        setError('Failed to load debts. Please try again later.');
+        setError('Failed to load data. Please try again later.');
       }
     } finally {
       setLoading(false);
@@ -214,27 +252,101 @@ export default function HomeScreen() {
     }
   };
   
+  // Handle marking a group debt as paid
+  const handleMarkGroupDebtPaid = async (debtId: string, isPaid: boolean) => {
+    if (!currentUser) return;
+    
+    try {
+      await markDebtAsPaid(currentUser.uid, debtId, !isPaid);
+      
+      // Force a refresh of the data to reflect the changes
+      loadData();
+    } catch (err) {
+      console.error('Error marking group debt as paid:', err);
+      Alert.alert('Error', 'Failed to update payment status');
+    }
+  };
+  
+  // Handle deleting a group
+  const handleDeleteGroup = async (groupId: string) => {
+    if (!currentUser) return;
+    
+    Alert.alert(
+      'Delete Group',
+      'Are you sure you want to delete this group? You can choose to keep or delete the individual debts.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Keep Debts', 
+          onPress: async () => {
+            try {
+              await deleteDebtGroup(currentUser.uid, groupId, true);
+              // Remove the group from state
+              setGroups(prev => prev.filter(g => g.id !== groupId));
+              // Reload debts to reflect changes
+              loadData();
+            } catch (err) {
+              console.error('Error deleting group:', err);
+              Alert.alert('Error', 'Failed to delete group');
+            }
+          }
+        },
+        {
+          text: 'Delete All',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteDebtGroup(currentUser.uid, groupId, false);
+              // Remove the group from state
+              setGroups(prev => prev.filter(g => g.id !== groupId));
+              // Reload debts to reflect changes
+              loadData();
+            } catch (err) {
+              console.error('Error deleting group and debts:', err);
+              Alert.alert('Error', 'Failed to delete group and debts');
+            }
+          }
+        }
+      ]
+    );
+  };
+  
   // Render a debt item - use the memoized component with userProfile
   const renderDebtItem = useCallback(({ item }: { item: Debt }) => {
+    // Only render non-group debts here
+    if (item.groupId) return null;
+    
     return <DebtItem item={item} onMarkPaid={handleMarkPaid} userProfile={userProfile} />;
   }, [handleMarkPaid, userProfile]);
+  
+  // Render group debt items
+  const renderGroupItems = useCallback(() => {
+    return groups.map(group => (
+      <GroupDebtCard
+        key={group.id}
+        group={group}
+        onMarkPaid={handleMarkGroupDebtPaid}
+        onDelete={handleDeleteGroup}
+      />
+    ));
+  }, [groups, handleMarkGroupDebtPaid, handleDeleteGroup]);
   
   // Optimize the effect to avoid unnecessary refreshes
   useEffect(() => {
     // Load debts only when component mounts or when refreshKey changes
-    console.log('Loading debts, refreshKey:', refreshKey);
-    loadDebts();
-  }, [loadDebts, refreshKey]); // Keep this dependency array
+    console.log('Loading data, refreshKey:', refreshKey);
+    loadData();
+  }, [loadData, refreshKey]); // Keep this dependency array
   
   // Optimize the auto-refresh effect to prevent unnecessary refreshes
   useEffect(() => {
     // Only run this effect once to check for initial data
     let timer: ReturnType<typeof setTimeout> | null = null;
     
-    if (debts.length === 0 && !loading && !error) {
+    if (debts.length === 0 && groups.length === 0 && !loading && !error) {
       // Set a timeout to wait for data to load before forcing a refresh
       timer = setTimeout(() => {
-        console.log('No debts found after delay, forcing refresh');
+        console.log('No data found after delay, forcing refresh');
         setRefreshKey(prev => prev + 1);
       }, 2000); // Increase timeout to 2 seconds to avoid too many refreshes
     }
@@ -243,32 +355,25 @@ export default function HomeScreen() {
     return () => {
       if (timer) clearTimeout(timer);
     };
-  }, []); // Empty dependency array - only run once
+  }, [debts.length, groups.length, loading, error]); // Only run when these change
   
-  // Listen for debt added events
+  // Listen for debt added/updated events
   useEffect(() => {
     // This function will be called whenever a debt is added
-    const handleDebtAdded = (newDebt: Debt) => {
-      console.log('EVENT: Debt added, triggering refresh', newDebt);
+    const handleDebtAdded = () => {
+      console.log('EVENT: Debt added or updated, triggering refresh');
       // Force a refresh of the debts list
       setRefreshKey(prev => prev + 1);
-      
-      // Optionally, you could also update the state directly for instant feedback
-      // This would avoid the loading indicator
-      /*
-      setDebts(prevDebts => {
-        // Add the new debt to the beginning of the list (since we sort by createdAt desc)
-        return [newDebt, ...prevDebts];
-      });
-      */
     };
     
-    // Subscribe to the DEBT_ADDED event
-    const unsubscribe = eventEmitter.on('DEBT_ADDED', handleDebtAdded);
+    // Subscribe to the events
+    const debtAddedUnsubscribe = eventEmitter.on('DEBT_ADDED', handleDebtAdded);
+    const debtUpdatedUnsubscribe = eventEmitter.on('DEBT_UPDATED', handleDebtAdded);
     
     // Clean up the subscription when the component unmounts
     return () => {
-      unsubscribe();
+      debtAddedUnsubscribe();
+      debtUpdatedUnsubscribe();
     };
   }, []);  // Empty dependency array means this only runs once when component mounts
   
@@ -330,32 +435,35 @@ export default function HomeScreen() {
               end={{ x: 1, y: 1 }}
               style={styles.receiptButtonGradient}
             >
-              <Ionicons name="receipt-outline" size={20} color="#000" />
+              <View style={styles.receiptButtonContent}>
+                <Ionicons name="receipt-outline" size={18} color="#000" />
+                <ThemedText style={styles.receiptButtonText}>Scan</ThemedText>
+              </View>
             </LinearGradient>
           </Pressable>
           
           {/* Add Debt Button */}
-        <Pressable 
-          style={({pressed}) => [
-            styles.addButton,
-            {opacity: pressed ? 0.8 : 1}
-          ]}
-          onPress={() => {
-            router.push('/add-debt');
-          }}
-        >
-          <LinearGradient
-            colors={[Colors.light.tint, '#3DCD84', '#2EBB77']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.buttonGradient}
+          <Pressable 
+            style={({pressed}) => [
+              styles.addButton,
+              {opacity: pressed ? 0.8 : 1}
+            ]}
+            onPress={() => {
+              router.push('/add-debt');
+            }}
           >
-            <View style={styles.buttonContent}>
-              <Ionicons name="add-circle" size={16} color="#000" style={styles.buttonIcon} />
-              <ThemedText style={styles.addButtonText}>Add Debt</ThemedText>
-            </View>
-          </LinearGradient>
-        </Pressable>
+            <LinearGradient
+              colors={[Colors.light.tint, '#3DCD84', '#2EBB77']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.buttonGradient}
+            >
+              <View style={styles.buttonContent}>
+                <Ionicons name="add-circle" size={16} color="#000" style={styles.buttonIcon} />
+                <ThemedText style={styles.addButtonText}>Add Debt</ThemedText>
+              </View>
+            </LinearGradient>
+          </Pressable>
         </View>
       </View>
       
@@ -375,7 +483,7 @@ export default function HomeScreen() {
             Total Amount Owed
           </Text>
           <Text style={[styles.debugAmount, {color: '#fff'}]}>
-            ${totalOwed.toFixed(2)}
+            ${combinedTotalOwed.toFixed(2)}
           </Text>
           <View style={styles.debugPeopleRow}>
             <View style={styles.iconContainer}>
@@ -387,75 +495,180 @@ export default function HomeScreen() {
           </View>
         </LinearGradient>
         
-        {/* Debt List */}
-        <LinearGradient
-          colors={['rgba(35,35,35,0.98)', 'rgba(25,25,25,0.95)']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.debtListContainer}
-        >
-          <View style={styles.debtListHeader}>
-            <ThemedText type="subtitle" style={styles.sectionTitle}>Recent Debts</ThemedText>
-            <View style={styles.headerButtons}>
+        {/* Loading & Error States */}
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={Colors.light.tint} />
+            <ThemedText style={styles.loadingText}>Loading your debts...</ThemedText>
+          </View>
+        ) : error ? (
+          <View style={styles.errorContainer}>
+            <Ionicons name="alert-circle" size={40} color={Colors.light.tint} />
+            <Text style={styles.errorText}>Error: {error}</Text>
+          </View>
+        ) : null}
+        
+        {/* When no debts are present, show educational content about receipt scanner */}
+        {(!debts || debts.length === 0) && (
+          <View style={styles.fullEmptyState}>
+            <Ionicons name="cash-outline" size={60} color="rgba(255,255,255,0.3)" />
+            <ThemedText type="subtitle" style={styles.fullEmptyStateTitle}>No debts yet</ThemedText>
+            <ThemedText style={styles.fullEmptyStateText}>
+              Start tracking money owed to you by adding a debt or scanning a receipt.
+            </ThemedText>
+            
+            {/* New Feature Highlight Section */}
+            <View style={styles.featureHighlight}>
+              <View style={styles.featureHighlightHeader}>
+                <Ionicons name="receipt-outline" size={24} color={Colors.light.tint} />
+                <ThemedText style={styles.featureHighlightTitle}>Receipt Scanner</ThemedText>
+              </View>
+              <ThemedText style={styles.featureHighlightText}>
+                Snap a photo of a receipt and automatically create debts with detailed item tracking.
+              </ThemedText>
               <Pressable 
-                style={styles.refreshButton}
-                onPress={handleRefresh}
+                style={({pressed}) => [
+                  styles.featureHighlightButton,
+                  {opacity: pressed ? 0.8 : 1}
+                ]}
+                onPress={async () => {
+                  try {
+                    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+                    if (status === 'granted') {
+                      const result = await ImagePicker.launchCameraAsync({
+                        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                        quality: 0.8,
+                        allowsEditing: true,
+                        aspect: [4, 3]
+                      });
+                      
+                      if (!result.canceled && result.assets.length > 0) {
+                        router.push({
+                          pathname: '/receipt-splitter',
+                          params: { imageUri: result.assets[0].uri }
+                        });
+                      }
+                    }
+                  } catch (error) {
+                    console.error('Camera error:', error);
+                  }
+                }}
               >
-                <Ionicons name="refresh" size={16} color={Colors.light.tint} />
-              </Pressable>
-              <Pressable style={styles.filterButton}>
-                <Ionicons name="filter" size={16} color={Colors.light.tint} />
+                <LinearGradient
+                  colors={[Colors.light.tint, '#3DCD84', '#2EBB77']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.featureHighlightButtonGradient}
+                >
+                  <Ionicons name="camera" size={16} color="#000" style={{marginRight: 6}} />
+                  <ThemedText style={styles.featureHighlightButtonText}>Scan a Receipt</ThemedText>
+                </LinearGradient>
               </Pressable>
             </View>
           </View>
-          
-          {loading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={Colors.light.tint} />
-              <Text style={styles.loadingText}>Loading debts...</Text>
-              <Text style={styles.loadingSubText}>
-                If this takes a while, check your Firestore rules or try the refresh button.
-              </Text>
-            </View>
-          ) : error ? (
-            <View style={styles.errorContainer}>
-              <Ionicons name="alert-circle" size={40} color={Colors.light.tint} />
-              <Text style={styles.errorText}>Error: {error}</Text>
-            </View>
-          ) : debts.length === 0 && !loading && !error ? (
-            <View style={styles.emptyState}>
-              <View style={styles.emptyStateIcon}>
-                <Ionicons 
-                  name="receipt-outline" 
-                  size={50} 
-                  color={Colors.light.tint}
-                  style={{opacity: 0.9}}
-                />
+        )}
+        
+        {/* If not loading and has data to show */}
+        {!loading && !error && (groups.length > 0 || debts.length > 0) && (
+          <>
+            {/* Group Debts Section */}
+            {groups.length > 0 && (
+              <View style={styles.debtsSection}>
+                <View style={styles.debtListHeader}>
+                  <ThemedText type="subtitle" style={styles.sectionTitle}>Debt Groups</ThemedText>
+                  <View style={styles.countBadge}>
+                    <Text style={styles.countBadgeText}>{groups.length}</Text>
+                  </View>
+                </View>
+                <View style={styles.debtListContent}>
+                  {renderGroupItems()}
+                </View>
               </View>
-              <Text style={styles.emptyStateText}>
-                No debts yet. Add your first debt to start tracking.
-              </Text>
-            </View>
-          ) : (
-            <FlatList
-              data={debts}
-              keyExtractor={(item) => item.id || Math.random().toString()}
-              renderItem={renderDebtItem}
-              scrollEnabled={false}
-              contentContainerStyle={styles.debtList}
-              ListEmptyComponent={!loading && (
-                <Text style={styles.emptyStateText}>
-                  No debts found. Add your first debt to start tracking.
-                </Text>
+            )}
+            
+            {/* Individual Debts Section */}
+            <View style={styles.debtsSection}>
+              <View style={styles.debtListHeader}>
+                <ThemedText type="subtitle" style={styles.sectionTitle}>Individual Debts</ThemedText>
+                <View style={styles.headerButtons}>
+                  <Pressable 
+                    style={styles.refreshButton}
+                    onPress={handleRefresh}
+                  >
+                    <Ionicons name="refresh" size={16} color={Colors.light.tint} />
+                  </Pressable>
+                  <View style={styles.countBadge}>
+                    <Text style={styles.countBadgeText}>{debts.filter(debt => !debt.groupId).length}</Text>
+                  </View>
+                </View>
+              </View>
+              
+              {debts.filter(debt => !debt.groupId).length === 0 ? (
+                <View style={styles.emptyState}>
+                  <View style={styles.emptyStateIcon}>
+                    <Ionicons 
+                      name="receipt-outline" 
+                      size={50} 
+                      color={Colors.light.tint}
+                      style={{opacity: 0.9}}
+                    />
+                  </View>
+                  <Text style={styles.emptyStateText}>
+                    No individual debts yet. Add your first debt to start tracking.
+                  </Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={debts.filter(debt => !debt.groupId)}
+                  keyExtractor={(item) => item.id || Math.random().toString()}
+                  renderItem={renderDebtItem}
+                  scrollEnabled={false}
+                  contentContainerStyle={styles.debtList}
+                  initialNumToRender={5}
+                  maxToRenderPerBatch={10}
+                  removeClippedSubviews={Platform.OS !== 'web'}
+                  windowSize={5}
+                />
               )}
-              initialNumToRender={5}
-              maxToRenderPerBatch={10}
-              removeClippedSubviews={Platform.OS !== 'web'}
-              windowSize={5}
-              extraData={debts.length}
-            />
-          )}
-        </LinearGradient>
+            </View>
+          </>
+        )}
+        
+        {/* Empty State when no data */}
+        {!loading && !error && groups.length === 0 && debts.length === 0 && (
+          <View style={styles.fullEmptyState}>
+            <View style={styles.emptyStateIcon}>
+              <Ionicons 
+                name="receipt-outline" 
+                size={80} 
+                color={Colors.light.tint}
+                style={{opacity: 0.9}}
+              />
+            </View>
+            <Text style={styles.fullEmptyStateTitle}>
+              No debts yet
+            </Text>
+            <Text style={styles.fullEmptyStateText}>
+              Add your first debt or debt group to start tracking money owed to you.
+            </Text>
+            <Pressable 
+              style={styles.emptyStateButton}
+              onPress={() => router.push('/add-debt')}
+            >
+              <LinearGradient
+                colors={[Colors.light.tint, '#3DCD84', '#2EBB77']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.emptyStateButtonGradient}
+              >
+                <View style={styles.buttonContent}>
+                  <Ionicons name="add-circle" size={16} color="#000" style={styles.buttonIcon} />
+                  <ThemedText style={styles.addButtonText}>Add Your First Debt</ThemedText>
+                </View>
+              </LinearGradient>
+            </Pressable>
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -569,6 +782,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 12,
   },
   headerButtons: {
     flexDirection: 'row',
@@ -777,9 +991,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   receiptButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 80,
+    height: 40,
+    borderRadius: 20,
     overflow: 'hidden',
     marginRight: 12,
     ...Platform.select({
@@ -799,5 +1013,142 @@ const styles = StyleSheet.create({
     height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 10,
+  },
+  receiptButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  receiptButtonText: {
+    color: '#000',
+    fontSize: 14,
+    fontFamily: 'Aeonik-Black',
+    marginLeft: 4,
+  },
+  debtsSection: {
+    marginBottom: 24,
+  },
+  sectionCount: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 14,
+    fontFamily: 'AeonikBlack-Regular',
+  },
+  fullEmptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 20,
+  },
+  fullEmptyStateTitle: {
+    color: '#fff',
+    fontSize: 24,
+    fontFamily: 'Aeonik-Black',
+    marginBottom: 16,
+  },
+  fullEmptyStateText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 16,
+    fontFamily: 'AeonikBlack-Regular',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  emptyStateButton: {
+    borderRadius: 30,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: Colors.light.tint,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 6,
+      },
+    }),
+  },
+  emptyStateButtonGradient: {
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 30,
+  },
+  debtListContent: {
+    paddingTop: 8,
+  },
+  countBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(74, 226, 144, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  countBadgeText: {
+    color: Colors.light.tint,
+    fontSize: 14,
+    fontFamily: 'Aeonik-Black',
+  },
+  featureHighlight: {
+    marginTop: 20,
+    padding: 20,
+    borderRadius: 20,
+    backgroundColor: 'rgba(35,35,35,0.9)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    ...Platform.select({
+      ios: {
+        shadowColor: Colors.light.tint,
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
+  },
+  featureHighlightHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  featureHighlightTitle: {
+    fontSize: 18,
+    fontFamily: 'Aeonik-Black',
+    color: '#fff',
+    marginLeft: 8,
+  },
+  featureHighlightText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 14,
+    marginBottom: 12,
+    fontFamily: 'AeonikBlack-Regular',
+  },
+  featureHighlightButton: {
+    borderRadius: 30,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: Colors.light.tint,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 6,
+      },
+    }),
+  },
+  featureHighlightButtonGradient: {
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 30,
+  },
+  featureHighlightButtonText: {
+    color: '#000',
+    fontSize: 14,
+    fontFamily: 'Aeonik-Black',
   },
 });

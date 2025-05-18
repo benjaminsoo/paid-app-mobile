@@ -12,9 +12,12 @@ import { ThemedView } from '@/components/ThemedView';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useAuth } from '@/contexts/AuthContext';
-import { createDebt } from '@/firebase/firestore';
+import { createDebt, createDebtGroup, addDebtToGroup } from '@/firebase/firestore';
 import eventEmitter from '@/utils/eventEmitter';
 import ContactsModal from '@/components/ContactsModal';
+import DebtModeSelector, { DebtMode } from '@/components/DebtModeSelector';
+import GroupDebtForm from '@/components/GroupDebtForm';
+import { GroupMember } from '@/components/GroupMemberItem';
 
 export default function AddDebtScreen() {
   const router = useRouter();
@@ -30,6 +33,9 @@ export default function AddDebtScreen() {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [loading, setLoading] = useState(false);
   const [contactsModalVisible, setContactsModalVisible] = useState(false);
+  
+  // New state for debt mode (single or group)
+  const [debtMode, setDebtMode] = useState<DebtMode>('single');
   
   // Handle contact selection
   const handleSelectContact = (contact: Contacts.Contact) => {
@@ -109,6 +115,74 @@ export default function AddDebtScreen() {
     }
   };
   
+  // Handle creating a group debt
+  const handleCreateGroupDebt = async (
+    groupName: string, 
+    groupDescription: string, 
+    members: Omit<GroupMember, 'id'>[]
+  ) => {
+    if (!currentUser) {
+      Alert.alert('Authentication Error', 'You must be logged in to create group debts.');
+      return;
+    }
+    
+    if (members.length === 0) {
+      Alert.alert('No Members', 'Please add at least one person to the group.');
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      
+      // First create the group
+      const newGroup = await createDebtGroup(currentUser.uid, {
+        name: groupName,
+        description: groupDescription
+      }) as { id: string };
+      
+      console.log('Successfully created group:', newGroup);
+      
+      // Then add each member as a debt to the group
+      const promises = members.map(member => {
+        return addDebtToGroup(
+          currentUser.uid,
+          newGroup.id as string,
+          {
+            debtorName: member.name,
+            amount: parseFloat(member.amount) || 0,
+            description: member.description || '',
+            phoneNumber: member.phoneNumber || '',
+          }
+        );
+      });
+      
+      await Promise.all(promises);
+      
+      // Emit event to update the home screen
+      eventEmitter.emit('DEBT_ADDED', newGroup);
+      
+      Alert.alert(
+        'Group Created', 
+        `Successfully created "${groupName}" with ${members.length} debts.`,
+        [{ 
+          text: 'OK', 
+          onPress: () => {
+            console.log('Navigating back to home after group creation');
+            router.back();
+          }
+        }]
+      );
+    } catch (error) {
+      console.error('Create group debt error:', error);
+      Alert.alert(
+        'Error Creating Group', 
+        'There was a problem creating your group. Please try again.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+  
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="light" />
@@ -145,6 +219,14 @@ export default function AddDebtScreen() {
           contentContainerStyle={styles.contentContainer}
           showsVerticalScrollIndicator={false}
         >
+          {/* Debt Mode Selector */}
+          <DebtModeSelector 
+            selectedMode={debtMode}
+            onSelectMode={setDebtMode}
+          />
+          
+          {debtMode === 'single' ? (
+            // Single Debt Form
           <LinearGradient
             colors={['rgba(35,35,35,0.98)', 'rgba(25,25,25,0.95)']}
             style={styles.formCard}
@@ -154,46 +236,46 @@ export default function AddDebtScreen() {
                 <Ionicons name="person-outline" size={18} color={Colors.light.tint} style={styles.labelIcon} />
                 <ThemedText style={styles.label}>Who owes you?</ThemedText>
               </View>
-              
-              <View style={styles.nameInputContainer}>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter name"
-                  placeholderTextColor="rgba(255,255,255,0.3)"
-                  value={name}
-                  onChangeText={setName}
-                  autoCapitalize="words"
-                  selectionColor={Colors.light.tint}
-                />
+                
+                <View style={styles.nameInputContainer}>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter name"
+                placeholderTextColor="rgba(255,255,255,0.3)"
+                value={name}
+                onChangeText={setName}
+                autoCapitalize="words"
+                selectionColor={Colors.light.tint}
+              />
+                  
+                  <Pressable
+                    style={({pressed}) => [
+                      styles.contactButton,
+                      {opacity: pressed ? 0.8 : 1}
+                    ]}
+                    onPress={() => setContactsModalVisible(true)}
+                  >
+                    <LinearGradient
+                      colors={['rgba(74, 226, 144, 0.2)', 'rgba(74, 226, 144, 0.1)']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.contactButtonGradient}
+                    >
+                      <Ionicons name="people" size={18} color={Colors.light.tint} />
+                    </LinearGradient>
+                  </Pressable>
+                </View>
                 
                 <Pressable
                   style={({pressed}) => [
-                    styles.contactButton,
+                    styles.selectContactButton,
                     {opacity: pressed ? 0.8 : 1}
                   ]}
                   onPress={() => setContactsModalVisible(true)}
                 >
-                  <LinearGradient
-                    colors={['rgba(74, 226, 144, 0.2)', 'rgba(74, 226, 144, 0.1)']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.contactButtonGradient}
-                  >
-                    <Ionicons name="people" size={18} color={Colors.light.tint} />
-                  </LinearGradient>
+                  <Ionicons name="person-add-outline" size={16} color={Colors.light.tint} style={styles.selectContactIcon} />
+                  <ThemedText style={styles.selectContactText}>Select from Contacts</ThemedText>
                 </Pressable>
-              </View>
-              
-              <Pressable
-                style={({pressed}) => [
-                  styles.selectContactButton,
-                  {opacity: pressed ? 0.8 : 1}
-                ]}
-                onPress={() => setContactsModalVisible(true)}
-              >
-                <Ionicons name="person-add-outline" size={16} color={Colors.light.tint} style={styles.selectContactIcon} />
-                <ThemedText style={styles.selectContactText}>Select from Contacts</ThemedText>
-              </Pressable>
             </View>
             
             <View style={styles.divider} />
@@ -236,7 +318,16 @@ export default function AddDebtScreen() {
               />
             </View>
           </LinearGradient>
+          ) : (
+            // Group Debt Form
+            <GroupDebtForm 
+              onCreateGroup={handleCreateGroupDebt}
+              isLoading={loading}
+            />
+          )}
           
+          {/* Only show the Save button for single debt mode */}
+          {debtMode === 'single' && (
           <Pressable 
             style={({pressed}) => [
               styles.addButton,
@@ -263,6 +354,7 @@ export default function AddDebtScreen() {
               </View>
             </LinearGradient>
           </Pressable>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
