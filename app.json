@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.paidmobile",
+      "bundleIdentifier": "com.benjaminsoo.paid",
       "infoPlist": {
         "NSContactsUsageDescription": "This app needs access to your contacts to select people who owe you money."
       }
