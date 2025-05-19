@@ -343,7 +343,12 @@ export default function HomeScreen() {
     // Only run this effect once to check for initial data
     let timer: ReturnType<typeof setTimeout> | null = null;
     
-    if (debts.length === 0 && groups.length === 0 && !loading && !error) {
+    // Only trigger a refresh if:
+    // 1. There's no data (debts and groups are empty arrays)
+    // 2. We're not currently loading
+    // 3. There's no error
+    // 4. We haven't initialized data yet (this is the key to prevent constant refreshes)
+    if (debts.length === 0 && groups.length === 0 && !loading && !error && refreshKey === 0) {
       // Set a timeout to wait for data to load before forcing a refresh
       timer = setTimeout(() => {
         console.log('No data found after delay, forcing refresh');
@@ -355,7 +360,7 @@ export default function HomeScreen() {
     return () => {
       if (timer) clearTimeout(timer);
     };
-  }, [debts.length, groups.length, loading, error]); // Only run when these change
+  }, [debts.length, groups.length, loading, error, refreshKey]); // Add refreshKey to dependencies
   
   // Listen for debt added/updated events
   useEffect(() => {
@@ -509,20 +514,59 @@ export default function HomeScreen() {
         ) : null}
         
         {/* When no debts are present, show educational content about receipt scanner */}
-        {(!debts || debts.length === 0) && (
+        {!loading && !error && groups.length === 0 && debts.length === 0 && (
           <View style={styles.fullEmptyState}>
-            <Ionicons name="cash-outline" size={60} color="rgba(255,255,255,0.3)" />
+            {/* Icon and title only - removed description */}
+            <Ionicons name="cash-outline" size={50} color="rgba(255,255,255,0.3)" />
             <ThemedText type="subtitle" style={styles.fullEmptyStateTitle}>No debts yet</ThemedText>
-            <ThemedText style={styles.fullEmptyStateText}>
-              Start tracking money owed to you by adding a debt or scanning a receipt.
-            </ThemedText>
             
-            {/* New Feature Highlight Section */}
+            {/* Spacing */}
+            <View style={{ height: 20 }} />
+            
+            {/* Add Debt Feature highlight */}
+            <View style={styles.featureHighlight}>
+              <View style={styles.featureHighlightHeader}>
+                <Ionicons name="add-circle" size={24} color={Colors.light.tint} />
+                <ThemedText style={styles.featureHighlightTitle}>Add Your First Debt</ThemedText>
+              </View>
+              <ThemedText style={styles.featureHighlightEntice}>Track What You're Owed</ThemedText>
+              <ThemedText style={styles.featureHighlightText}>
+                Easily keep track of money friends owe you with detailed records of who, when, and why.
+              </ThemedText>
+              <Pressable 
+                style={({pressed}) => [
+                  styles.featureHighlightButton,
+                  {opacity: pressed ? 0.8 : 1}
+                ]}
+                onPress={() => router.push('/add-debt')}
+              >
+                <LinearGradient
+                  colors={[Colors.light.tint, '#3DCD84', '#2EBB77']}
+                  start={{ x: 0.2, y: 0 }}
+                  end={{ x: 0.8, y: 1 }}
+                  style={styles.featureHighlightButtonGradient}
+                >
+                  <View style={styles.receiptButtonContent}>
+                    <View style={styles.cameraIconContainer}>
+                      <Ionicons name="add-circle" size={20} color="#000" />
+                    </View>
+                    <ThemedText style={styles.featureHighlightButtonText}>Add a Debt</ThemedText>
+                  </View>
+                </LinearGradient>
+              </Pressable>
+            </View>
+            
+            {/* Spacing between feature sections */}
+            <View style={{ height: 16 }} />
+            
+            {/* Receipt Scanner Feature Highlight */}
             <View style={styles.featureHighlight}>
               <View style={styles.featureHighlightHeader}>
                 <Ionicons name="receipt-outline" size={24} color={Colors.light.tint} />
                 <ThemedText style={styles.featureHighlightTitle}>Receipt Scanner</ThemedText>
               </View>
+              {/* Added enticing text */}
+              <ThemedText style={styles.featureHighlightEntice}>Just Had Dinner?</ThemedText>
               <ThemedText style={styles.featureHighlightText}>
                 Snap a photo of a receipt and automatically create debts with detailed item tracking.
               </ThemedText>
@@ -556,12 +600,17 @@ export default function HomeScreen() {
               >
                 <LinearGradient
                   colors={[Colors.light.tint, '#3DCD84', '#2EBB77']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
+                  start={{ x: 0.2, y: 0 }}
+                  end={{ x: 0.8, y: 1 }}
                   style={styles.featureHighlightButtonGradient}
                 >
-                  <Ionicons name="camera" size={16} color="#000" style={{marginRight: 6}} />
-                  <ThemedText style={styles.featureHighlightButtonText}>Scan a Receipt</ThemedText>
+                  {/* Fixed button layout with text to the right of the camera icon */}
+                  <View style={styles.receiptButtonContent}>
+                    <View style={styles.cameraIconContainer}>
+                      <Ionicons name="camera" size={20} color="#000" />
+                    </View>
+                    <ThemedText style={styles.featureHighlightButtonText}>Scan a Receipt</ThemedText>
+                  </View>
                 </LinearGradient>
               </Pressable>
             </View>
@@ -633,42 +682,6 @@ export default function HomeScreen() {
             </View>
           </>
         )}
-        
-        {/* Empty State when no data */}
-        {!loading && !error && groups.length === 0 && debts.length === 0 && (
-          <View style={styles.fullEmptyState}>
-            <View style={styles.emptyStateIcon}>
-              <Ionicons 
-                name="receipt-outline" 
-                size={80} 
-                color={Colors.light.tint}
-                style={{opacity: 0.9}}
-              />
-            </View>
-            <Text style={styles.fullEmptyStateTitle}>
-              No debts yet
-            </Text>
-            <Text style={styles.fullEmptyStateText}>
-              Add your first debt or debt group to start tracking money owed to you.
-            </Text>
-            <Pressable 
-              style={styles.emptyStateButton}
-              onPress={() => router.push('/add-debt')}
-            >
-              <LinearGradient
-                colors={[Colors.light.tint, '#3DCD84', '#2EBB77']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.emptyStateButtonGradient}
-              >
-                <View style={styles.buttonContent}>
-                  <Ionicons name="add-circle" size={16} color="#000" style={styles.buttonIcon} />
-                  <ThemedText style={styles.addButtonText}>Add Your First Debt</ThemedText>
-                </View>
-              </LinearGradient>
-            </Pressable>
-          </View>
-        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -709,7 +722,7 @@ const styles = StyleSheet.create({
   totalCard: {
     borderRadius: 20,
     padding: 24,
-    marginBottom: 24,
+    marginBottom: 16,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
@@ -1019,6 +1032,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    width: '100%',
   },
   receiptButtonText: {
     color: '#000',
@@ -1038,21 +1052,21 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 60,
+    paddingVertical: 30,
     paddingHorizontal: 20,
   },
   fullEmptyStateTitle: {
     color: '#fff',
     fontSize: 24,
     fontFamily: 'Aeonik-Black',
-    marginBottom: 16,
+    marginBottom: 10,
   },
   fullEmptyStateText: {
     color: 'rgba(255,255,255,0.7)',
     fontSize: 16,
     fontFamily: 'AeonikBlack-Regular',
     textAlign: 'center',
-    marginBottom: 24,
+    marginBottom: 0,
   },
   emptyStateButton: {
     borderRadius: 30,
@@ -1091,12 +1105,13 @@ const styles = StyleSheet.create({
     fontFamily: 'Aeonik-Black',
   },
   featureHighlight: {
-    marginTop: 20,
-    padding: 20,
+    marginTop: 0,
+    padding: 16,
     borderRadius: 20,
     backgroundColor: 'rgba(35,35,35,0.9)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.15)',
+    width: '100%',
     ...Platform.select({
       ios: {
         shadowColor: Colors.light.tint,
@@ -1112,7 +1127,7 @@ const styles = StyleSheet.create({
   featureHighlightHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   featureHighlightTitle: {
     fontSize: 18,
@@ -1123,32 +1138,51 @@ const styles = StyleSheet.create({
   featureHighlightText: {
     color: 'rgba(255,255,255,0.7)',
     fontSize: 14,
-    marginBottom: 12,
+    marginBottom: 8,
     fontFamily: 'AeonikBlack-Regular',
   },
   featureHighlightButton: {
     borderRadius: 30,
     overflow: 'hidden',
+    alignSelf: 'stretch',
+    marginTop: 14,
     ...Platform.select({
       ios: {
         shadowColor: Colors.light.tint,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.4,
+        shadowRadius: 12,
       },
       android: {
-        elevation: 6,
+        elevation: 8,
       },
     }),
   },
   featureHighlightButtonGradient: {
-    paddingVertical: 12,
-    paddingHorizontal: 18,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
     borderRadius: 30,
   },
   featureHighlightButtonText: {
     color: '#000',
-    fontSize: 14,
+    fontSize: 16,
     fontFamily: 'Aeonik-Black',
+    marginLeft: 8,
+  },
+  featureHighlightEntice: {
+    color: Colors.light.tint,
+    fontSize: 18,
+    marginBottom: 6,
+    fontFamily: 'Aeonik-Black',
+    marginTop: 0,
+  },
+  cameraIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
   },
 });

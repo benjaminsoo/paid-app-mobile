@@ -10,10 +10,12 @@ import {
   Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Contacts from 'expo-contacts';
 import { Colors } from '@/constants/Colors';
 import AddGroupMember from './AddGroupMember';
 import GroupMemberItem, { GroupMember } from './GroupMemberItem';
 import GroupDebtSummary from './GroupDebtSummary';
+import ContactsModal from './ContactsModal';
 
 interface GroupDebtFormProps {
   onCreateGroup: (
@@ -33,6 +35,7 @@ export default function GroupDebtForm({ onCreateGroup, isLoading }: GroupDebtFor
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [showAddMember, setShowAddMember] = useState(false);
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
+  const [contactsModalVisible, setContactsModalVisible] = useState(false);
   
   // Handle adding a new member
   const handleAddMember = (member: Omit<GroupMember, 'id'>) => {
@@ -45,10 +48,33 @@ export default function GroupDebtForm({ onCreateGroup, isLoading }: GroupDebtFor
     setShowAddMember(false);
   };
   
+  // Handle adding multiple members at once
+  const handleAddMultipleMembers = (newMembers: Omit<GroupMember, 'id'>[]) => {
+    const membersWithIds = newMembers.map((member, index) => ({
+      ...member,
+      id: `${Date.now()}-${index}`
+    }));
+    
+    setMembers([...members, ...membersWithIds]);
+    setShowAddMember(false);
+  };
+  
   // Handle editing an existing member
   const handleEditMember = (id: string) => {
     setEditingMemberId(id);
     setShowAddMember(true);
+  };
+  
+  // Handle updating an existing member
+  const handleUpdateMember = (updatedMember: Omit<GroupMember, 'id'>) => {
+    if (!editingMemberId) return;
+    
+    setMembers(members.map(member => 
+      member.id === editingMemberId ? { ...updatedMember, id: member.id } : member
+    ));
+    
+    setShowAddMember(false);
+    setEditingMemberId(null);
   };
   
   // Handle removing a member
@@ -75,6 +101,46 @@ export default function GroupDebtForm({ onCreateGroup, isLoading }: GroupDebtFor
     setMembers(members.map(member => 
       member.id === id ? { ...member, amount } : member
     ));
+  };
+  
+  // Handle multiple contacts selection
+  const handleSelectMultipleContacts = (contacts: Contacts.Contact[]) => {
+    if (contacts.length === 0) return;
+    
+    // Process in smaller batches for better performance
+    const processContact = (contact: Contacts.Contact, index: number): GroupMember => {
+      const fullName = `${contact.firstName || ''} ${contact.lastName || ''}`.trim();
+      let phoneNum = '';
+      
+      // Extract phone number if available
+      if (contact.phoneNumbers && contact.phoneNumbers.length > 0) {
+        phoneNum = contact.phoneNumbers[0].number || '';
+      }
+      
+      // Create member object with unique ID
+      return {
+        id: `${Date.now()}-${index}`,
+        name: fullName,
+        amount: '0', // Default amount
+        phoneNumber: phoneNum || undefined,
+        description: undefined
+      };
+    };
+    
+    // Filter valid contacts
+    const validContacts = contacts.filter(
+      contact => `${contact.firstName || ''} ${contact.lastName || ''}`.trim() !== ''
+    );
+    
+    // Process in batches for better performance with large contact lists
+    setTimeout(() => {
+      const newMembers = validContacts.map(processContact);
+      if (newMembers.length > 0) {
+        setMembers(prevMembers => [...prevMembers, ...newMembers]);
+      }
+    }, 100);
+    
+    setContactsModalVisible(false);
   };
   
   // Validate form before submission
@@ -154,7 +220,7 @@ export default function GroupDebtForm({ onCreateGroup, isLoading }: GroupDebtFor
           
           {members.length > 0 && (
             <View style={styles.membersList}>
-              {members.map(member => (
+              {members.slice(0, 50).map(member => (
                 <GroupMemberItem
                   key={member.id}
                   member={member}
@@ -163,6 +229,11 @@ export default function GroupDebtForm({ onCreateGroup, isLoading }: GroupDebtFor
                   onRemove={handleRemoveMember}
                 />
               ))}
+              {members.length > 50 && (
+                <Text style={styles.moreMembers}>
+                  +{members.length - 50} more members
+                </Text>
+              )}
             </View>
           )}
           
@@ -172,13 +243,27 @@ export default function GroupDebtForm({ onCreateGroup, isLoading }: GroupDebtFor
               pressed && {opacity: 0.8}
             ]}
             onPress={() => {
+              // Ensure we're in add mode, not edit mode
               setEditingMemberId(null);
               setShowAddMember(true);
             }}
           >
             <Ionicons name="person-add" size={18} color="#000" />
             <Text style={styles.addMemberButtonText}>
-              {members.length === 0 ? 'Add First Person' : 'Add Another Person'}
+              Add Manually
+            </Text>
+          </Pressable>
+          
+          <Pressable
+            style={({pressed}) => [
+              styles.addFromContactsButton,
+              pressed && {opacity: 0.8}
+            ]}
+            onPress={() => setContactsModalVisible(true)}
+          >
+            <Ionicons name="people" size={18} color={Colors.light.tint} />
+            <Text style={styles.addFromContactsButtonText}>
+              Add From Contacts
             </Text>
           </Pressable>
         </View>
@@ -222,11 +307,49 @@ export default function GroupDebtForm({ onCreateGroup, isLoading }: GroupDebtFor
           <View style={styles.modalContainer}>
             <AddGroupMember
               onAdd={handleAddMember}
-              onCancel={() => setShowAddMember(false)}
+              onCancel={() => {
+                setShowAddMember(false);
+                setEditingMemberId(null);
+              }}
+              onAddMultiple={handleAddMultipleMembers}
+              onUpdate={handleUpdateMember}
+              isEditing={!!editingMemberId}
+              memberToEdit={members.find(m => m.id === editingMemberId)}
             />
           </View>
         </View>
       </Modal>
+
+      {/* Contacts Modal */}
+      <ContactsModal
+        visible={contactsModalVisible}
+        onClose={() => setContactsModalVisible(false)}
+        onSelectContact={(contact) => {
+          // Create a new member from single contact
+          const fullName = `${contact.firstName || ''} ${contact.lastName || ''}`.trim();
+          let phoneNum = '';
+          
+          if (contact.phoneNumbers && contact.phoneNumbers.length > 0) {
+            phoneNum = contact.phoneNumbers[0].number || '';
+          }
+          
+          if (fullName) {
+            const newMember = {
+              id: Date.now().toString(),
+              name: fullName,
+              amount: '0',
+              phoneNumber: phoneNum || undefined,
+              description: undefined
+            };
+            
+            setMembers([...members, newMember]);
+          }
+          
+          setContactsModalVisible(false);
+        }}
+        multipleSelect={true}
+        onSelectMultipleContacts={handleSelectMultipleContacts}
+      />
     </View>
   );
 }
@@ -300,9 +423,27 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 14,
     borderRadius: 12,
+    marginBottom: 12,
   },
   addMemberButtonText: {
     color: '#000',
+    fontSize: 16,
+    fontFamily: 'Aeonik-Black',
+    marginLeft: 8,
+  },
+  addFromContactsButton: {
+    backgroundColor: 'rgba(35,35,35,0.95)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(74, 226, 144, 0.3)',
+    marginTop: 12,
+  },
+  addFromContactsButtonText: {
+    color: Colors.light.tint,
     fontSize: 16,
     fontFamily: 'Aeonik-Black',
     marginLeft: 8,
@@ -336,5 +477,11 @@ const styles = StyleSheet.create({
   },
   modalContainer: {
     width: '100%',
-  }
+  },
+  moreMembers: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 16,
+    fontFamily: 'AeonikBlack-Regular',
+    marginTop: 8,
+  },
 }); 

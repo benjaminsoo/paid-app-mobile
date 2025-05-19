@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -16,29 +16,56 @@ import ContactsModal from './ContactsModal';
 interface AddGroupMemberProps {
   onAdd: (member: Omit<GroupMember, 'id'>) => void;
   onCancel: () => void;
+  onAddMultiple?: (members: Omit<GroupMember, 'id'>[]) => void;
+  onUpdate?: (updatedMember: Omit<GroupMember, 'id'>) => void;
+  isEditing?: boolean;
+  memberToEdit?: GroupMember;
 }
 
 /**
  * Component for adding a new member to a group
  */
-export default function AddGroupMember({ onAdd, onCancel }: AddGroupMemberProps) {
+export default function AddGroupMember({ 
+  onAdd, 
+  onCancel, 
+  onAddMultiple,
+  onUpdate,
+  isEditing = false,
+  memberToEdit
+}: AddGroupMemberProps) {
   const [name, setName] = useState('');
   const [amount, setAmount] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [description, setDescription] = useState('');
   const [contactsModalVisible, setContactsModalVisible] = useState(false);
   
+  // Initialize form with member data when in edit mode
+  useEffect(() => {
+    if (isEditing && memberToEdit) {
+      setName(memberToEdit.name || '');
+      setAmount(memberToEdit.amount || '0');
+      setPhoneNumber(memberToEdit.phoneNumber || '');
+      setDescription(memberToEdit.description || '');
+    }
+  }, [isEditing, memberToEdit]);
+  
   const handleAdd = () => {
     if (!name.trim()) {
       return; // Name is required
     }
     
-    onAdd({
+    const memberData = {
       name: name.trim(),
       amount: amount || '0',
       phoneNumber: phoneNumber || undefined,
       description: description || undefined
-    });
+    };
+    
+    if (isEditing && onUpdate) {
+      onUpdate(memberData);
+    } else {
+      onAdd(memberData);
+    }
     
     // Reset form
     setName('');
@@ -64,16 +91,47 @@ export default function AddGroupMember({ onAdd, onCancel }: AddGroupMemberProps)
     setContactsModalVisible(false);
   };
   
+  // Handle multiple contacts selection
+  const handleSelectMultipleContacts = (contacts: Contacts.Contact[]) => {
+    if (!onAddMultiple || contacts.length === 0) return;
+    
+    const newMembers = contacts.map(contact => {
+      const fullName = `${contact.firstName || ''} ${contact.lastName || ''}`.trim();
+      let phoneNum = '';
+      
+      // Extract phone number if available
+      if (contact.phoneNumbers && contact.phoneNumbers.length > 0) {
+        phoneNum = contact.phoneNumbers[0].number || '';
+      }
+      
+      // Create member object
+      return {
+        name: fullName,
+        amount: '0', // Default amount
+        phoneNumber: phoneNum || undefined,
+        description: undefined
+      };
+    }).filter(member => member.name.trim() !== ''); // Remove any with empty names
+    
+    if (newMembers.length > 0) {
+      onAddMultiple(newMembers);
+    }
+    
+    setContactsModalVisible(false);
+  };
+  
   return (
     <View style={styles.container}>
       <ContactsModal
         visible={contactsModalVisible}
         onClose={() => setContactsModalVisible(false)}
         onSelectContact={handleSelectContact}
+        multipleSelect={!isEditing}
+        onSelectMultipleContacts={!isEditing ? handleSelectMultipleContacts : undefined}
       />
       
       <View style={styles.header}>
-        <Text style={styles.title}>Add Group Member</Text>
+        <Text style={styles.title}>{isEditing ? 'Edit Group Member' : 'Add Group Member'}</Text>
         <Pressable 
           style={({pressed}) => [styles.closeButton, pressed && {opacity: 0.7}]}
           onPress={onCancel}
@@ -105,13 +163,15 @@ export default function AddGroupMember({ onAdd, onCancel }: AddGroupMemberProps)
               </Pressable>
             </View>
             
-            <Pressable
-              style={({pressed}) => [styles.selectContactButton, pressed && {opacity: 0.7}]}
-              onPress={() => setContactsModalVisible(true)}
-            >
-              <Ionicons name="person-add-outline" size={16} color={Colors.light.tint} style={styles.selectContactIcon} />
-              <Text style={styles.selectContactText}>Select from Contacts</Text>
-            </Pressable>
+            {!isEditing && (
+              <Pressable
+                style={({pressed}) => [styles.selectContactButton, pressed && {opacity: 0.7}]}
+                onPress={() => setContactsModalVisible(true)}
+              >
+                <Ionicons name="person-add-outline" size={16} color={Colors.light.tint} style={styles.selectContactIcon} />
+                <Text style={styles.selectContactText}>Select from Contacts</Text>
+              </Pressable>
+            )}
           </View>
           
           <View style={styles.formGroup}>
@@ -134,12 +194,12 @@ export default function AddGroupMember({ onAdd, onCancel }: AddGroupMemberProps)
             <Text style={styles.label}>Notes (Optional)</Text>
             <TextInput
               style={styles.descriptionInput}
-              placeholder="Enter description"
+              placeholder="Add notes about this person or debt"
               placeholderTextColor="rgba(255,255,255,0.4)"
               value={description}
               onChangeText={setDescription}
               multiline
-              numberOfLines={2}
+              numberOfLines={3}
               textAlignVertical="top"
             />
           </View>
@@ -161,7 +221,9 @@ export default function AddGroupMember({ onAdd, onCancel }: AddGroupMemberProps)
               onPress={handleAdd}
               disabled={!name.trim()}
             >
-              <Text style={styles.addButtonText}>Add Member</Text>
+              <Text style={styles.addButtonText}>
+                {isEditing ? 'Update Member' : 'Add Member'}
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -286,7 +348,7 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 16,
     color: '#fff',
-    minHeight: 80,
+    minHeight: 100,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
   },

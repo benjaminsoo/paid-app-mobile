@@ -39,11 +39,11 @@ export default function GroupMemberItem({
     <View style={styles.container}>
       <View style={styles.nameSection}>
         <Text style={styles.name}>{member.name}</Text>
-        {member.phoneNumber && (
-          <View style={styles.phoneContainer}>
-            <Ionicons name="call-outline" size={12} color={Colors.light.tint} />
-            <Text style={styles.phoneText} numberOfLines={1} ellipsizeMode="middle">
-              {member.phoneNumber}
+        {member.description && (
+          <View style={styles.descriptionContainer}>
+            <Ionicons name="document-text-outline" size={12} color="rgba(255,255,255,0.6)" />
+            <Text style={styles.descriptionText} numberOfLines={2} ellipsizeMode="tail">
+              {member.description}
             </Text>
           </View>
         )}
@@ -101,17 +101,21 @@ const styles = StyleSheet.create({
     fontFamily: 'Aeonik-Black',
     marginBottom: 2,
   },
-  phoneContainer: {
+  descriptionContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
+    alignItems: 'flex-start',
+    marginTop: 6,
+    padding: 8,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 8,
   },
-  phoneText: {
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: 12,
+  descriptionText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 13,
     fontFamily: 'AeonikBlack-Regular',
-    marginLeft: 4,
-    maxWidth: 180,
+    marginLeft: 6,
+    flex: 1,
+    lineHeight: 18,
   },
   amountSection: {
     flexDirection: 'row',

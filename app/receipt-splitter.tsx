@@ -688,6 +688,38 @@ export default function ReceiptSplitterScreen() {
     setContactsModalVisible(false);
   };
   
+  // New function to handle multiple contacts being selected
+  const handleSelectMultipleContacts = (contacts: Contacts.Contact[]) => {
+    if (contacts.length === 0) return;
+    
+    const newPeople: Person[] = contacts.map(contact => {
+      // Extract full name from contact
+      const fullName = `${contact.firstName || ''} ${contact.lastName || ''}`.trim();
+      
+      // Get phone number if available
+      let phoneNumber = '';
+      if (contact.phoneNumbers && contact.phoneNumbers.length > 0) {
+        phoneNumber = contact.phoneNumbers[0].number || '';
+      }
+      
+      return {
+        id: `contact-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        name: fullName,
+        phoneNumber: phoneNumber
+      };
+    });
+    
+    // Filter out any invalid names
+    const validPeople = newPeople.filter(person => person.name.trim() !== '');
+    
+    if (validPeople.length === 0) {
+      Alert.alert('Invalid Contacts', 'None of the selected contacts have valid names.');
+      return;
+    }
+    
+    setPeople([...people, ...validPeople]);
+  };
+  
   // Create a new function to handle formatted input changes for all money fields
   const handleMaskedInputChange = (value: string, inputSetter: (value: string) => void, valueSetter: (value: number | null) => void) => {
     // Allow only numbers and at most one decimal point
@@ -756,6 +788,8 @@ export default function ReceiptSplitterScreen() {
         visible={contactsModalVisible}
         onClose={() => setContactsModalVisible(false)}
         onSelectContact={handleSelectContact}
+        multipleSelect={true}
+        onSelectMultipleContacts={handleSelectMultipleContacts}
       />
       
       <LinearGradient
@@ -871,7 +905,7 @@ export default function ReceiptSplitterScreen() {
               style={styles.selectContactButton}
               onPress={() => setContactsModalVisible(true)}
             >
-              <Ionicons name="person-add-outline" size={18} color={Colors.light.tint} style={styles.selectContactIcon} />
+              <Ionicons name="people" size={18} color={Colors.light.tint} style={styles.selectContactIcon} />
               <Text style={styles.selectContactText}>Select from Contacts</Text>
             </Pressable>
           </View>
@@ -1043,6 +1077,8 @@ export default function ReceiptSplitterScreen() {
         <Text style={styles.tipText}>
           Tip: Tap any value to edit it directly. All values will be split proportionally.
         </Text>
+        
+        <View style={{ height: 10 }} />
         
         {/* Debt Information */}
         <View style={styles.sectionContainer}>
@@ -1772,6 +1808,7 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     textAlign: 'center',
     marginTop: 12,
+    marginBottom: 20,
   },
   tipExplainerText: {
     color: 'rgba(255,255,255,0.4)',

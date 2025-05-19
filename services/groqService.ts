@@ -96,7 +96,7 @@ export const processReceiptImage = async (imageUri: string): Promise<ReceiptProc
           ],
         },
       ],
-      model: "meta-llama/llama-4-scout-17b-16e-instruct",
+      model: "meta-llama/llama-4-maverick-17b-128e-instruct",
       response_format: { type: "json_object" },
       temperature: 0.3,
       max_completion_tokens: 1024,

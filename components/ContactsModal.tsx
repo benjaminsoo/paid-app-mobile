@@ -9,7 +9,8 @@ import {
   ActivityIndicator,
   TextInput,
   Alert,
-  Platform
+  Platform,
+  ScrollView
 } from 'react-native';
 import * as Contacts from 'expo-contacts';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -20,18 +21,28 @@ interface ContactsModalProps {
   visible: boolean;
   onClose: () => void;
   onSelectContact: (contact: Contacts.Contact) => void;
+  multipleSelect?: boolean;
+  onSelectMultipleContacts?: (contacts: Contacts.Contact[]) => void;
 }
 
-export default function ContactsModal({ visible, onClose, onSelectContact }: ContactsModalProps) {
+export default function ContactsModal({ 
+  visible, 
+  onClose, 
+  onSelectContact, 
+  multipleSelect = false,
+  onSelectMultipleContacts
+}: ContactsModalProps) {
   const [contacts, setContacts] = useState<Contacts.Contact[]>([]);
   const [filteredContacts, setFilteredContacts] = useState<Contacts.Contact[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedContacts, setSelectedContacts] = useState<Contacts.Contact[]>([]);
 
   useEffect(() => {
     if (visible) {
       loadContacts();
+      setSelectedContacts([]);
     }
   }, [visible]);
 
@@ -69,7 +80,6 @@ export default function ContactsModal({ visible, onClose, onSelectContact }: Con
       });
 
       if (data.length > 0) {
-        // Only include contacts with names
         const validContacts = data.filter(
           contact => contact.firstName || contact.lastName
         );
@@ -85,8 +95,50 @@ export default function ContactsModal({ visible, onClose, onSelectContact }: Con
   };
 
   const handleSelectContact = (contact: Contacts.Contact) => {
-    onSelectContact(contact);
+    if (multipleSelect) {
+      const isSelected = selectedContacts.some(
+        selected => selected.id === contact.id
+      );
+      
+      if (isSelected) {
+        setSelectedContacts(
+          selectedContacts.filter(selected => selected.id !== contact.id)
+        );
+      } else {
+        setSelectedContacts([...selectedContacts, contact]);
+      }
+    } else {
+      onSelectContact(contact);
+      onClose();
+    }
+  };
+  
+  const handleAddSelectedContacts = () => {
+    if (selectedContacts.length === 0) {
+      Alert.alert('No Contacts Selected', 'Please select at least one contact.');
+      return;
+    }
+    
+    // Create a copy to avoid state mutation issues
+    const contactsToAdd = [...selectedContacts];
+    
+    if (onSelectMultipleContacts) {
+      // Clear selection state before executing callback to prevent UI freezing
+      setSelectedContacts([]);
+      
+      // Use setTimeout to allow UI to update before heavy processing
+      setTimeout(() => {
+        onSelectMultipleContacts(contactsToAdd);
+      }, 100);
+    } else {
+      onSelectContact(selectedContacts[0]);
+    }
+    
     onClose();
+  };
+  
+  const isContactSelected = (contact: Contacts.Contact): boolean => {
+    return selectedContacts.some(selected => selected.id === contact.id);
   };
 
   const getContactInitial = (contact: Contacts.Contact) => {
@@ -104,14 +156,26 @@ export default function ContactsModal({ visible, onClose, onSelectContact }: Con
 
   const renderContactItem = ({ item }: { item: Contacts.Contact }) => {
     const fullName = getFullName(item);
+    const isSelected = isContactSelected(item);
+    
     return (
       <Pressable
         style={({ pressed }) => [
           styles.contactItem,
-          pressed && styles.contactItemPressed
+          pressed && styles.contactItemPressed,
+          isSelected && styles.contactItemSelected
         ]}
         onPress={() => handleSelectContact(item)}
       >
+        {multipleSelect && (
+          <View style={[
+            styles.checkbox,
+            isSelected && styles.checkboxSelected
+          ]}>
+            {isSelected && <Ionicons name="checkmark" size={16} color="#000" />}
+          </View>
+        )}
+        
         <View style={styles.contactInitialContainer}>
           <Text style={styles.contactInitial}>{getContactInitial(item)}</Text>
         </View>
@@ -123,8 +187,47 @@ export default function ContactsModal({ visible, onClose, onSelectContact }: Con
             </Text>
           )}
         </View>
-        <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.5)" />
+        
+        {!multipleSelect && (
+          <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.5)" />
+        )}
       </Pressable>
+    );
+  };
+  
+  const renderSelectedContactsSection = () => {
+    if (!multipleSelect || selectedContacts.length === 0) return null;
+    
+    return (
+      <View style={styles.selectedContactsContainer}>
+        <View style={styles.selectedCountRow}>
+          <Text style={styles.selectedCountText}>
+            {selectedContacts.length} {selectedContacts.length === 1 ? 'contact' : 'contacts'} selected
+          </Text>
+          {selectedContacts.length > 0 && (
+            <Pressable onPress={() => setSelectedContacts([])}>
+              <Text style={styles.clearSelectionText}>Clear</Text>
+            </Pressable>
+          )}
+        </View>
+        
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.selectedContactsScroll}
+        >
+          {selectedContacts.map(contact => (
+            <Pressable 
+              key={contact.id} 
+              style={styles.selectedContactChip}
+              onPress={() => handleSelectContact(contact)}
+            >
+              <Text style={styles.selectedContactName}>{getFullName(contact)}</Text>
+              <Ionicons name="close-circle" size={16} color="rgba(255,255,255,0.7)" />
+            </Pressable>
+          ))}
+        </ScrollView>
+      </View>
     );
   };
 
@@ -142,7 +245,9 @@ export default function ContactsModal({ visible, onClose, onSelectContact }: Con
         />
         <View style={styles.modalView}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Select Contact</Text>
+            <Text style={styles.modalTitle}>
+              {multipleSelect ? 'Select Contacts' : 'Select Contact'}
+            </Text>
             <Pressable
               style={styles.closeButton}
               onPress={onClose}
@@ -170,6 +275,8 @@ export default function ContactsModal({ visible, onClose, onSelectContact }: Con
               </Pressable>
             )}
           </View>
+          
+          {renderSelectedContactsSection()}
 
           {loading ? (
             <View style={styles.loadingContainer}>
@@ -205,6 +312,24 @@ export default function ContactsModal({ visible, onClose, onSelectContact }: Con
               showsVerticalScrollIndicator={true}
               initialNumToRender={20}
             />
+          )}
+          
+          {multipleSelect && (
+            <View style={styles.addButtonContainer}>
+              <Pressable
+                style={[
+                  styles.addButton,
+                  selectedContacts.length === 0 && styles.addButtonDisabled
+                ]}
+                onPress={handleAddSelectedContacts}
+                disabled={selectedContacts.length === 0}
+              >
+                <Text style={styles.addButtonText}>
+                  Add {selectedContacts.length > 0 ? `${selectedContacts.length} ` : ''}
+                  {selectedContacts.length === 1 ? 'Contact' : 'Contacts'}
+                </Text>
+              </Pressable>
+            </View>
           )}
         </View>
       </View>
@@ -358,6 +483,10 @@ const styles = StyleSheet.create({
   contactItemPressed: {
     backgroundColor: 'rgba(255,255,255,0.1)',
   },
+  contactItemSelected: {
+    backgroundColor: 'rgba(74, 226, 144, 0.15)',
+    borderColor: 'rgba(74, 226, 144, 0.3)',
+  },
   contactInitialContainer: {
     width: 40,
     height: 40,
@@ -385,5 +514,82 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.5)',
     fontSize: 14,
     fontFamily: 'AeonikBlack-Regular',
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.3)',
+    marginRight: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  checkboxSelected: {
+    backgroundColor: Colors.light.tint,
+    borderColor: Colors.light.tint,
+  },
+  selectedContactsContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  selectedCountRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  selectedCountText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 14,
+    fontFamily: 'AeonikBlack-Regular',
+  },
+  clearSelectionText: {
+    color: Colors.light.tint,
+    fontSize: 14,
+    fontFamily: 'Aeonik-Black',
+  },
+  selectedContactsScroll: {
+    paddingVertical: 8,
+    flexDirection: 'row',
+  },
+  selectedContactChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(74, 226, 144, 0.15)',
+    borderRadius: 16,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(74, 226, 144, 0.3)',
+  },
+  selectedContactName: {
+    color: '#fff',
+    fontSize: 13,
+    fontFamily: 'AeonikBlack-Regular',
+    marginRight: 4,
+  },
+  addButtonContainer: {
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.1)',
+  },
+  addButton: {
+    backgroundColor: Colors.light.tint,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  addButtonDisabled: {
+    backgroundColor: 'rgba(74, 226, 144, 0.3)',
+  },
+  addButtonText: {
+    color: '#000',
+    fontSize: 16,
+    fontFamily: 'Aeonik-Black',
   },
 }); 

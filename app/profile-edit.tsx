@@ -15,11 +15,20 @@ import { updateUserProfile } from '@/firebase/firestore';
 import { uploadProfileImage, uploadBackgroundImage } from '@/firebase/storage';
 import { PaymentMethod } from '@/firebase/models';
 
+// Define the default images using require
+const DefaultProfileImage = require('@/assets/images/Paid-Default-Profile-Image.png');
+const DefaultBackgroundImage = require('@/assets/images/Paid-Default-Background-Image.png');
+
 // Only log in development mode
-const isDevelopment = Constants.expoConfig?.extra?.NODE_ENV === 'development';
-const logDebug = (message: string, data?: any) => {
-  if (isDevelopment) {
-    console.log(message, data);
+const logDebug = (...args: any[]) => {
+  if (__DEV__) {
+    console.log(...args);
+  }
+};
+
+const logError = (...args: any[]) => {
+  if (__DEV__) {
+    console.error(...args);
   }
 };
 
@@ -359,9 +368,10 @@ export default function ProfileEditScreen() {
                   style={styles.profileImage}
                 />
               ) : (
-                <View style={styles.profileImagePlaceholder}>
-                  <Ionicons name="person" size={50} color="rgba(255,255,255,0.3)" />
-                </View>
+                <Image 
+                  source={DefaultProfileImage}
+                  style={styles.profileImage}
+                />
               )}
             </View>
             
@@ -393,9 +403,10 @@ export default function ProfileEditScreen() {
                   style={styles.backgroundImage}
                 />
               ) : (
-                <View style={styles.backgroundImagePlaceholder}>
-                  <Ionicons name="image-outline" size={50} color="rgba(255,255,255,0.3)" />
-                </View>
+                <Image 
+                  source={DefaultBackgroundImage}
+                  style={styles.backgroundImage}
+                />
               )}
             </View>
             
@@ -771,12 +782,6 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  profileImagePlaceholder: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   backgroundImageContainer: {
     alignItems: 'center',
     marginBottom: 16,
@@ -796,12 +801,6 @@ const styles = StyleSheet.create({
   backgroundImage: {
     width: '100%',
     height: '100%',
-  },
-  backgroundImagePlaceholder: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   selectImageButton: {
     paddingHorizontal: 20,
