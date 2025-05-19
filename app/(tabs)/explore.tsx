@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { StyleSheet, ScrollView, View, Text, ActivityIndicator, Pressable, Platform, Share, Image } from 'react-native';
+import { StyleSheet, ScrollView, View, Text, ActivityIndicator, Pressable, Platform, Share, Image, Modal, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -57,6 +57,7 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [showLinkInfoModal, setShowLinkInfoModal] = useState(false);
   
   // Use ref to track initialization and prevent duplicate refreshes
   const profileInitialized = useRef(false);
@@ -246,6 +247,56 @@ export default function ProfileScreen() {
         <Text style={styles.title}>My Profile</Text>
       </View>
       
+      {/* Link Info Modal */}
+      <Modal
+        visible={showLinkInfoModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowLinkInfoModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.linkInfoModalContent}>
+            <View style={styles.linkInfoModalHeader}>
+              <Text style={styles.linkInfoModalTitle}>What's a Paid Link?</Text>
+              <Pressable
+                style={styles.closeModalButton}
+                onPress={() => setShowLinkInfoModal(false)}
+              >
+                <Ionicons name="close" size={24} color="#fff" />
+              </Pressable>
+            </View>
+            
+            <ScrollView style={styles.linkInfoScrollView}>
+              <Text style={styles.linkInfoText}>
+                Your Paid Link displays all your payment methods in one place.
+              </Text>
+              <View style={styles.imageContainer}>
+                <Image
+                  source={require('../../assets/images/link-screenshot.png')}
+                  style={styles.linkScreenshotImage}
+                  resizeMode="contain"
+                />
+              </View>
+              
+              <Text style={styles.linkInfoText}>
+              When your friend clicks on a payment method, the corresponding app opens directly to your payment page.
+              </Text>
+              
+              <Text style={styles.linkInfoFooter}>
+                Complete your profile to activate your link – it takes less than 1 minute.
+              </Text>
+            </ScrollView>
+            
+            <Pressable 
+              style={styles.closeModalButtonFull}
+              onPress={() => setShowLinkInfoModal(false)}
+            >
+              <Text style={styles.closeModalButtonText}>Got it</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+      
       <ScrollView 
         style={styles.scrollContainer}
         contentContainerStyle={styles.scrollContent}
@@ -275,11 +326,13 @@ export default function ProfileScreen() {
                 !hasProfileData && styles.incompleteCard
               ]}
             >
-              <Text style={styles.cardTitle}>
-                {hasProfileData 
-                  ? "Your Personal Payment Link" 
-                  : "Your Link has not been created yet"}
-              </Text>
+              <View style={styles.cardTitleContainer}>
+                <Text style={styles.cardTitle}>
+                  {hasProfileData 
+                    ? "Your Personal Payment Link" 
+                    : "Your Link has not been created yet"}
+                </Text>
+              </View>
               
               <View style={styles.linkContainer}>
                 <View style={styles.linkTextContainer}>
@@ -335,12 +388,21 @@ export default function ProfileScreen() {
                 </Pressable>
               )}
               
-              <Text style={styles.linkDescription}>
-                {hasProfileData 
-                  ? "Share this link with anyone to receive payments through any of your configured methods."
-                  : "This is what your link address will be after you create it."
-                }
-              </Text>
+              {hasProfileData ? (
+                <Text style={styles.linkDescription}>
+                  Share this link with anyone to receive payments through any of your configured methods.
+                </Text>
+              ) : (
+                <Pressable
+                  onPress={() => setShowLinkInfoModal(true)}
+                  style={styles.whatsAPaidLinkButton}
+                >
+                  <Ionicons name="information-circle-outline" size={20} color={Colors.light.tint} style={styles.whatsAPaidLinkIcon} />
+                  <Text style={styles.whatsAPaidLinkText}>
+                    What's a Paid Link?
+                  </Text>
+                </Pressable>
+              )}
             </LinearGradient>
             
             {/* Add Create Link button outside the card when profile is not set up */}
@@ -571,6 +633,8 @@ export default function ProfileScreen() {
   );
 }
 
+const { width } = Dimensions.get('window');
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -701,11 +765,19 @@ const styles = StyleSheet.create({
   incompleteCard: {
     borderColor: 'rgba(220,38,38,0.2)',
   },
+  cardTitleContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
   cardTitle: {
     fontSize: 18,
     fontFamily: 'Aeonik-Black',
     color: '#fff',
-    marginBottom: 16,
+  },
+  infoButton: {
+    padding: 4,
   },
   linkContainer: {
     flexDirection: 'row',
@@ -1023,5 +1095,100 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.light.tint,
     fontFamily: 'Aeonik-Black',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  linkInfoModalContent: {
+    backgroundColor: '#232323',
+    borderRadius: 20,
+    width: '100%',
+    maxHeight: '90%',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    overflow: 'hidden',
+  },
+  linkInfoModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  linkInfoModalTitle: {
+    color: Colors.light.tint,
+    fontSize: 20,
+    fontFamily: 'Aeonik-Black',
+  },
+  closeModalButton: {
+    padding: 4,
+  },
+  linkInfoScrollView: {
+    padding: 20,
+    maxHeight: 500,
+  },
+  linkInfoText: {
+    color: '#fff',
+    fontSize: 16,
+    fontFamily: 'AeonikBlack-Regular',
+    marginBottom: 20,
+    lineHeight: 24,
+  },
+  imageContainer: {
+    width: width - 60,
+    height: (width - 60) * 1.8,
+    alignSelf: 'center',
+    marginVertical: 24,
+    borderRadius: 24,
+    overflow: 'hidden',
+    backgroundColor: '#1a1a1a',
+  },
+  linkScreenshotImage: {
+    width: '100%',
+    height: '100%',
+  },
+  linkInfoFooter: {
+    color: Colors.light.tint,
+    fontSize: 16,
+    fontFamily: 'Aeonik-Black',
+    marginTop: 10,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  closeModalButtonFull: {
+    backgroundColor: Colors.light.tint,
+    padding: 16,
+    alignItems: 'center',
+  },
+  closeModalButtonText: {
+    color: '#000',
+    fontSize: 16,
+    fontFamily: 'Aeonik-Black',
+  },
+  whatsAPaidLinkButton: {
+    marginTop: 12,
+    marginBottom: 4,
+    padding: 12,
+    backgroundColor: 'rgba(74, 226, 144, 0.1)',
+    borderWidth: 1, 
+    borderColor: 'rgba(74, 226, 144, 0.3)',
+    borderRadius: 12,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  whatsAPaidLinkIcon: {
+    marginRight: 8,
+  },
+  whatsAPaidLinkText: {
+    color: Colors.light.tint,
+    fontSize: 16,
+    fontFamily: 'Aeonik-Black',
+    textAlign: 'center',
   },
 });
