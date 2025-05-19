@@ -10,9 +10,10 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.benjaminsoo.paid",
+      "bundleIdentifier": "com.benjaminsoo.paidapp",
       "infoPlist": {
-        "NSContactsUsageDescription": "This app needs access to your contacts to select people who owe you money."
+        "NSContactsUsageDescription": "This app needs access to your contacts to select people who owe you money.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -22,7 +23,11 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.anonymous.paidmobile",
-      "permissions": ["READ_CONTACTS"]
+      "permissions": [
+        "READ_CONTACTS",
+        "android.permission.READ_CONTACTS",
+        "android.permission.WRITE_CONTACTS"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -59,6 +64,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "0102a36c-2fdf-4a48-896c-7e5964d19c0d"
+      }
     }
   }
 }
