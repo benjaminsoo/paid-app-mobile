@@ -31,7 +31,6 @@ yarn-error.*
 *.pem
 
 # local env files
-.env
 .env*.local
 
 # typescript
@@ -40,9 +39,3 @@ yarn-error.*
 app-example
 android/
 ios/
-
-# Builds
-builds/
-ios/build/
-android/build/
-android/app/build/

@@ -13,6 +13,7 @@
       "bundleIdentifier": "com.benjaminsoo.paidapp",
       "infoPlist": {
         "NSContactsUsageDescription": "This app needs access to your contacts to select people who owe you money.",
+        "NSCameraUsageDescription": "This app needs access to your camera to scan receipts and create debts.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -59,6 +60,21 @@
         "expo-contacts",
         {
           "contactsPermission": "This app needs access to your contacts to select people who owe you money."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app accesses your photos to let you share them with your friends.",
+          "cameraPermission": "The app needs access to your camera to scan receipts and create debts."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static"
+          }
         }
       ]
     ],

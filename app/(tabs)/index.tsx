@@ -411,6 +411,8 @@ export default function HomeScreen() {
                 
                 if (status !== 'granted') {
                   console.error('Camera permission not granted');
+                  Alert.alert('Permission Required', 
+                    'Camera permission is required to scan receipts. Please enable it in your device settings.');
                   return;
                 }
                 
@@ -431,6 +433,9 @@ export default function HomeScreen() {
                 }
               } catch (error) {
                 console.error('Camera or navigation error:', error);
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                Alert.alert('Camera Error', 
+                  `There was a problem with the camera: ${errorMessage}. Please try again.`);
               }
             }}
           >
@@ -448,27 +453,27 @@ export default function HomeScreen() {
           </Pressable>
           
           {/* Add Debt Button */}
-          <Pressable 
-            style={({pressed}) => [
-              styles.addButton,
-              {opacity: pressed ? 0.8 : 1}
-            ]}
-            onPress={() => {
-              router.push('/add-debt');
-            }}
+        <Pressable 
+          style={({pressed}) => [
+            styles.addButton,
+            {opacity: pressed ? 0.8 : 1}
+          ]}
+          onPress={() => {
+            router.push('/add-debt');
+          }}
+        >
+          <LinearGradient
+            colors={[Colors.light.tint, '#3DCD84', '#2EBB77']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.buttonGradient}
           >
-            <LinearGradient
-              colors={[Colors.light.tint, '#3DCD84', '#2EBB77']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.buttonGradient}
-            >
-              <View style={styles.buttonContent}>
-                <Ionicons name="add-circle" size={16} color="#000" style={styles.buttonIcon} />
-                <ThemedText style={styles.addButtonText}>Add Debt</ThemedText>
-              </View>
-            </LinearGradient>
-          </Pressable>
+            <View style={styles.buttonContent}>
+              <Ionicons name="add-circle" size={16} color="#000" style={styles.buttonIcon} />
+              <ThemedText style={styles.addButtonText}>Add Debt</ThemedText>
+            </View>
+          </LinearGradient>
+        </Pressable>
         </View>
       </View>
       

@@ -141,27 +141,27 @@ export default function AddGroupMember({
       </View>
       
       <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-        <View style={styles.form}>
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Name</Text>
-            <View style={styles.nameInputContainer}>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter name"
-                placeholderTextColor="rgba(255,255,255,0.4)"
-                value={name}
-                onChangeText={setName}
-                autoCapitalize="words"
-                returnKeyType="next"
-              />
-              
-              <Pressable
-                style={({pressed}) => [styles.contactButton, pressed && {opacity: 0.7}]}
-                onPress={() => setContactsModalVisible(true)}
-              >
-                <Ionicons name="people" size={18} color={Colors.light.tint} />
-              </Pressable>
-            </View>
+      <View style={styles.form}>
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Name</Text>
+          <View style={styles.nameInputContainer}>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter name"
+              placeholderTextColor="rgba(255,255,255,0.4)"
+              value={name}
+              onChangeText={setName}
+              autoCapitalize="words"
+              returnKeyType="next"
+            />
+            
+            <Pressable
+              style={({pressed}) => [styles.contactButton, pressed && {opacity: 0.7}]}
+              onPress={() => setContactsModalVisible(true)}
+            >
+              <Ionicons name="people" size={18} color={Colors.light.tint} />
+            </Pressable>
+          </View>
             
             {!isEditing && (
               <Pressable
@@ -172,61 +172,61 @@ export default function AddGroupMember({
                 <Text style={styles.selectContactText}>Select from Contacts</Text>
               </Pressable>
             )}
-          </View>
-          
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Amount</Text>
-            <View style={styles.amountContainer}>
-              <Text style={styles.currencySymbol}>$</Text>
-              <TextInput
-                style={styles.amountInput}
-                placeholder="0.00"
-                placeholderTextColor="rgba(255,255,255,0.4)"
-                keyboardType="decimal-pad"
-                value={amount}
-                onChangeText={setAmount}
-                returnKeyType="next"
-              />
-            </View>
-          </View>
-          
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Notes (Optional)</Text>
+        </View>
+        
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Amount</Text>
+          <View style={styles.amountContainer}>
+            <Text style={styles.currencySymbol}>$</Text>
             <TextInput
-              style={styles.descriptionInput}
-              placeholder="Add notes about this person or debt"
+              style={styles.amountInput}
+              placeholder="0.00"
               placeholderTextColor="rgba(255,255,255,0.4)"
-              value={description}
-              onChangeText={setDescription}
-              multiline
-              numberOfLines={3}
-              textAlignVertical="top"
+              keyboardType="decimal-pad"
+              value={amount}
+              onChangeText={setAmount}
+              returnKeyType="next"
             />
           </View>
+        </View>
+        
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Notes (Optional)</Text>
+          <TextInput
+            style={styles.descriptionInput}
+              placeholder="Add notes about this person or debt"
+            placeholderTextColor="rgba(255,255,255,0.4)"
+            value={description}
+            onChangeText={setDescription}
+            multiline
+              numberOfLines={3}
+            textAlignVertical="top"
+          />
+        </View>
+        
+        <View style={styles.buttons}>
+          <Pressable
+            style={({pressed}) => [styles.cancelButton, pressed && {opacity: 0.7}]}
+            onPress={onCancel}
+          >
+            <Text style={styles.cancelButtonText}>Cancel</Text>
+          </Pressable>
           
-          <View style={styles.buttons}>
-            <Pressable
-              style={({pressed}) => [styles.cancelButton, pressed && {opacity: 0.7}]}
-              onPress={onCancel}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </Pressable>
-            
-            <Pressable
-              style={({pressed}) => [
-                styles.addButton, 
-                !name.trim() && styles.addButtonDisabled,
-                pressed && {opacity: 0.7}
-              ]}
-              onPress={handleAdd}
-              disabled={!name.trim()}
-            >
+          <Pressable
+            style={({pressed}) => [
+              styles.addButton, 
+              !name.trim() && styles.addButtonDisabled,
+              pressed && {opacity: 0.7}
+            ]}
+            onPress={handleAdd}
+            disabled={!name.trim()}
+          >
               <Text style={styles.addButtonText}>
                 {isEditing ? 'Update Member' : 'Add Member'}
               </Text>
-            </Pressable>
-          </View>
+          </Pressable>
         </View>
+      </View>
       </ScrollView>
     </View>
   );

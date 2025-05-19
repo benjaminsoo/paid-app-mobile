@@ -474,7 +474,7 @@ export default function ReceiptSplitterScreen() {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       
       if (status !== 'granted') {
-        Alert.alert('Permission required', 'Camera permission is required to take photos');
+        Alert.alert('Permission required', 'Camera permission is required to take photos. Please enable it in your device settings.');
         return;
       }
       
@@ -492,7 +492,9 @@ export default function ReceiptSplitterScreen() {
       }
     } catch (error) {
       console.error('Camera error:', error);
-      setError('Failed to take a new photo');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      Alert.alert('Camera Error', `There was a problem accessing the camera: ${errorMessage}. Please try again.`);
+      setError('Failed to take a new photo: ' + errorMessage);
     }
   };
   

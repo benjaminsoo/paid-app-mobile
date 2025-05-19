@@ -108,7 +108,7 @@ export default function ContactsModal({
         setSelectedContacts([...selectedContacts, contact]);
       }
     } else {
-      onSelectContact(contact);
+    onSelectContact(contact);
       onClose();
     }
   };
@@ -189,7 +189,7 @@ export default function ContactsModal({
         </View>
         
         {!multipleSelect && (
-          <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.5)" />
+        <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.5)" />
         )}
       </Pressable>
     );
