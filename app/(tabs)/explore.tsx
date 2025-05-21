@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { StyleSheet, ScrollView, View, Text, ActivityIndicator, Pressable, Platform, Share, Image, Modal, Dimensions } from 'react-native';
+import { StyleSheet, ScrollView, View, Text, ActivityIndicator, Pressable, Platform, Share, Image, Modal, Dimensions, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -51,7 +51,7 @@ const PaymentMethodItem = React.memo(({ method, getColor, getIcon, formatName, p
 
 export default function ProfileScreen() {
   const colorScheme = useColorScheme();
-  const { currentUser, userProfile, logout, refreshUserProfile } = useAuth();
+  const { currentUser, userProfile, logout, refreshUserProfile, deleteAccount } = useAuth();
   const router = useRouter();
   
   const [loading, setLoading] = useState(true);
@@ -173,6 +173,24 @@ export default function ProfileScreen() {
 
   const handlePreviewProfile = useCallback(() => {
     router.push('/profile-preview');
+  }, [router]);
+
+  const handleDeleteAccount = useCallback(() => {
+    Alert.alert(
+      'Delete Account',
+      'Are you sure you want to permanently delete your account? You will need to confirm with your password on the next screen.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Continue', 
+          style: 'destructive', 
+          onPress: () => router.push({
+            pathname: '/profile-edit',
+            params: { action: 'delete' }
+          })
+        }
+      ]
+    );
   }, [router]);
 
   // Memoize these functions since they don't depend on any state/props
@@ -566,6 +584,29 @@ export default function ProfileScreen() {
                 <Text style={styles.editButtonText}>Edit Profile</Text>
               </LinearGradient>
             </Pressable>
+            )}
+            
+            {/* Add Delete Account button only when profile is not set up */}
+            {!hasProfileData && (
+              <Pressable 
+                style={({pressed}) => [
+                  styles.deleteAccountButton,
+                  {opacity: pressed ? 0.8 : 1}
+                ]}
+                onPress={handleDeleteAccount}
+              >
+                <LinearGradient
+                  colors={['#FF3B30', '#E03A30']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.deleteAccountButtonGradient}
+                >
+                  <View style={styles.deleteAccountButtonContent}>
+                    <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
+                    <Text style={styles.deleteAccountButtonText}>Delete Account</Text>
+                  </View>
+                </LinearGradient>
+              </Pressable>
             )}
             
             {/* Sign Out Button */}
@@ -1190,5 +1231,38 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Aeonik-Black',
     textAlign: 'center',
+  },
+  deleteAccountButton: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginTop: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: 'rgba(255, 59, 48, 0.5)',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 6,
+      },
+    }),
+  },
+  deleteAccountButtonGradient: {
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteAccountButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteAccountButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontFamily: 'Aeonik-Black',
+    marginLeft: 8,
   },
 });

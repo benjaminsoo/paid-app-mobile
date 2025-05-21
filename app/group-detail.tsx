@@ -179,9 +179,7 @@ export default function GroupDetailScreen() {
       
       <Stack.Screen
         options={{
-          headerTitle: 'Group Detail',
-          headerStyle: { backgroundColor: '#121212' },
-          headerTintColor: Colors.light.tint,
+          headerShown: false
         }}
       />
       

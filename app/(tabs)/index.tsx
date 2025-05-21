@@ -13,10 +13,23 @@ import { ThemedView } from '@/components/ThemedView';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useAuth } from '@/contexts/AuthContext';
-import { fetchUserDebts, markDebtAsPaid, getDebtGroups, getDebtGroupWithDebts, deleteDebtGroup } from '@/firebase/firestore';
-import { Debt, DebtGroup } from '@/firebase/models';
+import { fetchUserDebts, markDebtAsPaid, getDebtGroups, getDebtGroupWithDebts, deleteDebtGroup, getRecurringDebtById } from '@/firebase/firestore';
+import { Debt, DebtGroup, RecurringFrequency, RecurringDebt } from '@/firebase/models';
 import eventEmitter from '@/utils/eventEmitter';
 import GroupDebtCard from '@/components/GroupDebtCard';
+
+// Helper function to format recurring frequency in a user-friendly way
+const formatRecurringFrequency = (frequency: RecurringFrequency): string => {
+  switch (frequency) {
+    case 'daily': return 'Daily';
+    case 'weekly': return 'Weekly';
+    case 'biweekly': return 'Every 2 weeks';
+    case 'monthly': return 'Monthly';
+    case 'quarterly': return 'Every 3 months';
+    case 'yearly': return 'Yearly';
+    default: return 'Recurring';
+  }
+};
 
 // Create a memoized Debt Item component to prevent unnecessary re-renders
 const DebtItem = memo(({ 
@@ -28,6 +41,36 @@ const DebtItem = memo(({
   onMarkPaid: (id: string) => void,
   userProfile: any
 }) => {
+  const [recurringInfo, setRecurringInfo] = useState<RecurringDebt | null>(null);
+  const { currentUser } = useAuth();
+  const router = useRouter();
+  
+  // Fetch recurring information if this is a recurring debt
+  useEffect(() => {
+    const fetchRecurringInfo = async () => {
+      if (item.isRecurring && item.recurringId && currentUser) {
+        try {
+          const data = await getRecurringDebtById(currentUser.uid, item.recurringId);
+          if (data) {
+            setRecurringInfo(data as RecurringDebt);
+          }
+        } catch (err) {
+          console.error('Error fetching recurring info:', err);
+        }
+      }
+    };
+    
+    fetchRecurringInfo();
+  }, [item.isRecurring, item.recurringId, currentUser]);
+
+  // Navigate to debt detail screen
+  const navigateToDetail = useCallback(() => {
+    router.push({
+      pathname: '/debt-detail',
+      params: { debt: JSON.stringify(item) }
+    });
+  }, [router, item]);
+
   // Check if user has a valid payment link
   const hasValidPaymentLink = useCallback(() => {
     if (!userProfile) return false;
@@ -92,9 +135,26 @@ const DebtItem = memo(({
   }, [item, userProfile, hasValidPaymentLink]);
 
   return (
-    <View style={[styles.debtItem, item.isPaid && styles.paidDebtItem]}>
+    <Pressable 
+      style={({pressed}) => [
+        styles.debtItem, 
+        item.isPaid && styles.paidDebtItem,
+        pressed && styles.pressedDebtItem
+      ]}
+      onPress={navigateToDetail}
+    >
       <View style={styles.debtInfo}>
+        <View style={styles.debtorNameContainer}>
         <Text style={styles.debtorName}>{item.debtorName}</Text>
+          {item.isRecurring && (
+            <View style={styles.recurringBadge}>
+              <Ionicons name="refresh" size={10} color={Colors.light.tint} />
+              <Text style={styles.recurringText}>
+                {recurringInfo?.frequency ? formatRecurringFrequency(recurringInfo.frequency) : 'Recurring'}
+              </Text>
+            </View>
+          )}
+        </View>
         <Text style={styles.debtAmount}>${item.amount.toFixed(2)}</Text>
         {item.description ? (
           <Text style={styles.debtDescription}>{item.description}</Text>
@@ -111,6 +171,34 @@ const DebtItem = memo(({
             </View>
           )}
         </View>
+        
+        {/* Recurring details */}
+        {item.isRecurring && recurringInfo && (
+          <View style={styles.recurringDetailsContainer}>
+            <View style={styles.recurringDetailRow}>
+              <Ionicons name="calendar-outline" size={12} color={Colors.light.tint} />
+              <Text style={styles.recurringDetailText}>
+                {`Started: ${new Date(recurringInfo.startDate).toLocaleDateString()}`}
+              </Text>
+            </View>
+            
+            {recurringInfo.endDate && (
+              <View style={styles.recurringDetailRow}>
+                <Ionicons name="flag-outline" size={12} color={Colors.light.tint} />
+                <Text style={styles.recurringDetailText}>
+                  {`Ends: ${new Date(recurringInfo.endDate).toLocaleDateString()}`}
+                </Text>
+              </View>
+            )}
+            
+            <View style={styles.recurringDetailRow}>
+              <Ionicons name="time-outline" size={12} color={Colors.light.tint} />
+              <Text style={styles.recurringDetailText}>
+                {`Next charge: ${new Date(recurringInfo.nextGenerationDate).toLocaleDateString()}`}
+              </Text>
+            </View>
+          </View>
+        )}
       </View>
       
       {!item.isPaid && (
@@ -121,7 +209,10 @@ const DebtItem = memo(({
               styles.remindButton,
               {opacity: pressed ? 0.8 : 1}
             ]}
-            onPress={handleRemind}
+            onPress={(e) => {
+              e.stopPropagation();
+              handleRemind();
+            }}
           >
             <Ionicons name="chatbubble-outline" size={16} color={Colors.light.tint} />
             <Text style={styles.actionButtonText}>Remind</Text>
@@ -133,14 +224,17 @@ const DebtItem = memo(({
               styles.markPaidButton,
               {opacity: pressed ? 0.8 : 1}
             ]}
-            onPress={() => onMarkPaid(item.id!)}
+            onPress={(e) => {
+              e.stopPropagation();
+              onMarkPaid(item.id!);
+            }}
           >
             <Ionicons name="checkmark-circle" size={16} color={Colors.light.tint} />
             <Text style={styles.actionButtonText}>Mark Paid</Text>
           </Pressable>
         </View>
       )}
-    </View>
+    </Pressable>
   );
 });
 
@@ -908,6 +1002,10 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingRight: 12,
   },
+  debtorNameContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   debtorName: {
     color: '#fff',
     fontSize: 16,
@@ -1189,5 +1287,42 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 8,
+  },
+  recurringBadge: {
+    backgroundColor: 'rgba(74, 226, 144, 0.2)',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginLeft: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  recurringText: {
+    color: Colors.light.tint,
+    fontSize: 10,
+    fontFamily: 'Aeonik-Black',
+    marginLeft: 4,
+  },
+  recurringDetailsContainer: {
+    marginTop: 8,
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(74, 226, 144, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(74, 226, 144, 0.2)',
+  },
+  recurringDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  recurringDetailText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 12,
+    fontFamily: 'AeonikBlack-Regular',
+    marginLeft: 4,
+  },
+  pressedDebtItem: {
+    backgroundColor: 'rgba(74, 226, 144, 0.1)',
   },
 });

@@ -3,11 +3,15 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut,
-  onAuthStateChanged 
+  onAuthStateChanged,
+  deleteUser,
+  reauthenticateWithCredential,
+  EmailAuthProvider 
 } from 'firebase/auth';
 import { auth } from '../firebase/config';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, deleteDoc, query, where, getDocs, collection } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { deleteUserStorageFiles } from '../firebase/storage';
 
 // Create the authentication context
 const AuthContext = createContext();
@@ -38,6 +42,82 @@ export const AuthProvider = ({ children }) => {
   const logout = useCallback(() => {
     return signOut(auth);
   }, []);
+
+  // Function to delete user account entirely
+  const deleteAccount = useCallback(async (password) => {
+    if (!currentUser) {
+      throw new Error('No user is currently logged in');
+    }
+
+    try {
+      // Get user data to find username
+      const userDocRef = doc(db, 'users', currentUser.uid);
+      const userDocSnap = await getDoc(userDocRef);
+      let username = null;
+      
+      if (userDocSnap.exists()) {
+        const userData = userDocSnap.data();
+        username = userData.username;
+      }
+
+      // Re-authenticate user before deletion
+      const credential = EmailAuthProvider.credential(currentUser.email, password);
+      await reauthenticateWithCredential(currentUser, credential);
+      
+      // Delete all user storage files (profile images, background images, etc.)
+      await deleteUserStorageFiles(currentUser.uid);
+      
+      // Delete Firestore user data first
+      // 1. Delete all debts in the user's subcollections
+      const debtsCollectionRef = collection(db, 'users', currentUser.uid, 'debts');
+      const debtsSnapshot = await getDocs(debtsCollectionRef);
+      
+      for (const debtDoc of debtsSnapshot.docs) {
+        await deleteDoc(doc(db, 'users', currentUser.uid, 'debts', debtDoc.id));
+      }
+      
+      // 2. Delete all debt groups
+      const groupsCollectionRef = collection(db, 'users', currentUser.uid, 'debtGroups');
+      const groupsSnapshot = await getDocs(groupsCollectionRef);
+      
+      for (const groupDoc of groupsSnapshot.docs) {
+        await deleteDoc(doc(db, 'users', currentUser.uid, 'debtGroups', groupDoc.id));
+      }
+      
+      // 3. Delete all recurring debts
+      const recurringCollectionRef = collection(db, 'users', currentUser.uid, 'recurringDebts');
+      const recurringSnapshot = await getDocs(recurringCollectionRef);
+      
+      for (const recurringDoc of recurringSnapshot.docs) {
+        await deleteDoc(doc(db, 'users', currentUser.uid, 'recurringDebts', recurringDoc.id));
+      }
+      
+      // 4. Delete the main user document
+      await deleteDoc(userDocRef);
+      
+      // 5. Delete username entry if exists
+      if (username) {
+        const usernameDocRef = doc(db, 'usernames', username.toLowerCase());
+        const usernameSnap = await getDoc(usernameDocRef);
+        
+        if (usernameSnap.exists() && usernameSnap.data().uid === currentUser.uid) {
+          await deleteDoc(usernameDocRef);
+        }
+      }
+      
+      // Delete the authenticated user
+      await deleteUser(currentUser);
+      
+      // Reset local state
+      setCurrentUser(null);
+      setUserProfile(null);
+      
+      return true;
+    } catch (error) {
+      console.error('Error deleting account:', error);
+      throw error;
+    }
+  }, [currentUser]);
 
   // Function to fetch user profile data
   const fetchUserProfile = useCallback(async (userId) => {
@@ -107,8 +187,9 @@ export const AuthProvider = ({ children }) => {
     login,
     signup,
     logout,
+    deleteAccount,
     refreshUserProfile
-  }), [currentUser, userProfile, login, signup, logout, refreshUserProfile]);
+  }), [currentUser, userProfile, login, signup, logout, deleteAccount, refreshUserProfile]);
 
   return (
     <AuthContext.Provider value={value}>

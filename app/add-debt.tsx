@@ -18,6 +18,8 @@ import ContactsModal from '@/components/ContactsModal';
 import DebtModeSelector, { DebtMode } from '@/components/DebtModeSelector';
 import GroupDebtForm from '@/components/GroupDebtForm';
 import { GroupMember } from '@/components/GroupMemberItem';
+import RecurringOptionsComponent from '@/components/RecurringOptionsComponent';
+import { RecurringOptions as RecurringOptionsType, RecurringFrequency } from '@/firebase/models';
 
 export default function AddDebtScreen() {
   const router = useRouter();
@@ -36,6 +38,14 @@ export default function AddDebtScreen() {
   
   // New state for debt mode (single or group)
   const [debtMode, setDebtMode] = useState<DebtMode>('single');
+  
+  // State for recurring options
+  const [recurringOptions, setRecurringOptions] = useState<RecurringOptionsType>({
+    isRecurring: false,
+    frequency: 'monthly' as RecurringFrequency,
+    startDate: new Date(),
+    endDate: null,
+  });
   
   // Handle contact selection
   const handleSelectContact = (contact: Contacts.Contact) => {
@@ -76,12 +86,26 @@ export default function AddDebtScreen() {
     try {
       setLoading(true);
       
+      // Create the basic debt data
       const debtData = {
         debtorName: name.trim(),
         amount: parseFloat(amount),
         description: description.trim(),
         phoneNumber: phoneNumber.trim(),
+        isRecurring: recurringOptions.isRecurring,
       };
+      
+      // Add recurring fields if it's a recurring debt
+      if (recurringOptions.isRecurring) {
+        Object.assign(debtData, {
+          recurringFrequency: recurringOptions.frequency,
+          recurringStartDate: recurringOptions.startDate.toISOString(),
+          recurringEndDate: recurringOptions.endDate ? recurringOptions.endDate.toISOString() : null,
+          recurringDay: recurringOptions.frequency === 'weekly' || recurringOptions.frequency === 'biweekly'
+            ? recurringOptions.dayOfWeek
+            : recurringOptions.dayOfMonth
+        });
+      }
       
       console.log('Creating debt with data:', debtData);
       
@@ -92,10 +116,11 @@ export default function AddDebtScreen() {
       eventEmitter.emit('DEBT_ADDED', newDebt);
       
       const phoneNumberInfo = phoneNumber ? ` (Phone: ${phoneNumber})` : '';
+      const recurringInfo = recurringOptions.isRecurring ? ` (${recurringOptions.frequency})` : '';
       
       Alert.alert(
         'Debt Added', 
-        `Successfully added debt of $${amount} from ${name}${phoneNumberInfo}.`,
+        `Successfully added${recurringInfo} debt of $${amount} from ${name}${phoneNumberInfo}.`,
         [{ 
           text: 'OK', 
           onPress: () => {
@@ -119,7 +144,8 @@ export default function AddDebtScreen() {
   const handleCreateGroupDebt = async (
     groupName: string, 
     groupDescription: string, 
-    members: Omit<GroupMember, 'id'>[]
+    members: Omit<GroupMember, 'id'>[],
+    recurringOptions: RecurringOptionsType
   ) => {
     if (!currentUser) {
       Alert.alert('Authentication Error', 'You must be logged in to create group debts.');
@@ -134,11 +160,30 @@ export default function AddDebtScreen() {
     try {
       setLoading(true);
       
-      // First create the group
-      const newGroup = await createDebtGroup(currentUser.uid, {
+      // First create the group with recurring options if needed
+      const groupData: any = {
         name: groupName,
         description: groupDescription
-      }) as { id: string };
+      };
+      
+      // Add recurring options if enabled
+      if (recurringOptions.isRecurring) {
+        Object.assign(groupData, {
+          isRecurring: true,
+          frequency: recurringOptions.frequency,
+          startDate: recurringOptions.startDate,
+          endDate: recurringOptions.endDate,
+          dayOfMonth: recurringOptions.frequency === 'monthly' || 
+                     recurringOptions.frequency === 'quarterly' || 
+                     recurringOptions.frequency === 'yearly' 
+                     ? recurringOptions.dayOfMonth : null,
+          dayOfWeek: recurringOptions.frequency === 'weekly' || 
+                    recurringOptions.frequency === 'biweekly' 
+                    ? recurringOptions.dayOfWeek : null
+        });
+      }
+      
+      const newGroup = await createDebtGroup(currentUser.uid, groupData) as { id: string };
       
       console.log('Successfully created group:', newGroup);
       
@@ -161,9 +206,12 @@ export default function AddDebtScreen() {
       // Emit event to update the home screen
       eventEmitter.emit('DEBT_ADDED', newGroup);
       
+      const recurringText = recurringOptions.isRecurring ? 
+        ` (${recurringOptions.frequency})` : '';
+      
       Alert.alert(
         'Group Created', 
-        `Successfully created "${groupName}" with ${members.length} debts.`,
+        `Successfully created${recurringText} "${groupName}" with ${members.length} debts.`,
         [{ 
           text: 'OK', 
           onPress: () => {
@@ -315,6 +363,15 @@ export default function AddDebtScreen() {
                 value={description}
                 onChangeText={setDescription}
                 selectionColor={Colors.light.tint}
+              />
+            </View>
+            
+            <View style={styles.divider} />
+            
+            <View style={styles.formSection}>
+              <RecurringOptionsComponent 
+                options={recurringOptions}
+                onChange={setRecurringOptions}
               />
             </View>
           </LinearGradient>

@@ -1,4 +1,4 @@
-import { collection, getDocs, doc, getDoc, query, where, orderBy, limit, addDoc, updateDoc, deleteDoc, Timestamp, setDoc, writeBatch, increment, runTransaction } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, query, where, orderBy, limit, addDoc, updateDoc, deleteDoc, Timestamp, setDoc, writeBatch, increment, runTransaction, arrayUnion } from 'firebase/firestore';
 import { db } from './config';
 
 /**
@@ -59,9 +59,25 @@ export const fetchDocument = async (collectionName, documentId) => {
  * @param {string} [debtData.description] - Optional description
  * @param {string} [debtData.phoneNumber] - Optional phone number for reminders
  * @param {string} [debtData.groupId] - Optional group ID
+ * @param {boolean} [debtData.isRecurring] - Whether this is a recurring debt
+ * @param {string} [debtData.recurringFrequency] - Frequency of the recurring debt
+ * @param {string} [debtData.recurringStartDate] - ISO date when the recurring debt starts
+ * @param {string} [debtData.recurringEndDate] - ISO date when the recurring debt ends (optional)
+ * @param {number} [debtData.recurringDay] - Day of month/week for the recurring debt
  * @returns {Promise<Object>} - Created debt with ID
  */
-export const createDebt = async (userId, { debtorName, amount, description = '', phoneNumber = '', groupId = null }) => {
+export const createDebt = async (userId, { 
+  debtorName, 
+  amount, 
+  description = '', 
+  phoneNumber = '', 
+  groupId = null,
+  isRecurring = false,
+  recurringFrequency = 'monthly',
+  recurringStartDate = new Date().toISOString(),
+  recurringEndDate = null,
+  recurringDay = null
+}) => {
   try {
     if (!userId) {
       throw new Error('userId is required');
@@ -85,7 +101,8 @@ export const createDebt = async (userId, { debtorName, amount, description = '',
       createdAt: now,
       updatedAt: now,
       isPaid: false,
-      userId: String(userId)
+      userId: String(userId),
+      isRecurring: Boolean(isRecurring)
     };
     
     // Add groupId if present
@@ -93,9 +110,49 @@ export const createDebt = async (userId, { debtorName, amount, description = '',
       debtData.groupId = String(groupId);
     }
     
+    // If this is a recurring debt, create a recurring template first
+    if (isRecurring) {
+      try {
+        const recurringDebt = await createRecurringDebt(userId, {
+          debtorName,
+          amount,
+          description,
+          phoneNumber,
+          groupId,
+          frequency: recurringFrequency,
+          startDate: recurringStartDate,
+          endDate: recurringEndDate,
+          dayOfMonth: recurringFrequency === 'monthly' || recurringFrequency === 'quarterly' || recurringFrequency === 'yearly' 
+            ? recurringDay : null,
+          dayOfWeek: recurringFrequency === 'weekly' || recurringFrequency === 'biweekly' 
+            ? recurringDay : null
+        });
+        
+        // Link this debt to the recurring template
+        debtData.recurringId = recurringDebt.id;
+        debtData.recurringInstanceIndex = 0; // First instance
+      } catch (recurringError) {
+        console.error('Error creating recurring debt template:', recurringError);
+        // Continue with creating regular debt even if recurring template fails
+      }
+    }
+    
     console.log('Debt data being saved:', debtData);
     const docRef = await addDoc(userDebtsRef, debtData);
     console.log(`Debt created with ID: ${docRef.id}`);
+    
+    // If this is a recurring debt, update the recurring template with this debt ID
+    if (isRecurring && debtData.recurringId) {
+      try {
+        const recurringRef = doc(db, 'users', userId, 'recurringDebts', debtData.recurringId);
+        await updateDoc(recurringRef, {
+          generatedDebtIds: arrayUnion(docRef.id),
+          lastGeneratedDate: now,
+        });
+      } catch (err) {
+        console.error('Error updating recurring debt with generated debt ID:', err);
+      }
+    }
     
     // If part of a group, update the group's totals
     if (groupId) {
@@ -122,6 +179,106 @@ export const createDebt = async (userId, { debtorName, amount, description = '',
     };
   } catch (error) {
     console.error('Error creating debt:', error);
+    throw error;
+  }
+};
+
+/**
+ * Create a recurring debt template
+ * @param {string} userId - ID of the user who is owed money
+ * @param {Object} recurringData - Recurring debt information
+ * @returns {Promise<Object>} - Created recurring debt with ID
+ */
+export const createRecurringDebt = async (userId, {
+  debtorName,
+  amount,
+  description = '',
+  phoneNumber = '',
+  groupId = null,
+  frequency = 'monthly',
+  startDate = new Date().toISOString(),
+  endDate = null,
+  dayOfMonth = null,
+  dayOfWeek = null
+}) => {
+  try {
+    if (!userId) {
+      throw new Error('userId is required');
+    }
+    
+    console.log(`Creating recurring debt template for user ${userId}`);
+    const recurringDebtsRef = collection(db, 'users', userId, 'recurringDebts');
+    const now = new Date().toISOString();
+    
+    // Ensure proper data types
+    const numericAmount = Number(amount);
+    if (isNaN(numericAmount)) {
+      throw new Error('Invalid amount: must be a number');
+    }
+    
+    // Parse the start date
+    const startDateObj = new Date(startDate);
+    
+    // Calculate next generation date based on start date and frequency
+    // Use the start date as the reference point instead of today's date
+    const nextGeneration = new Date(startDateObj);
+    
+    // Calculate next generation based on frequency
+    switch (frequency) {
+      case 'daily':
+        nextGeneration.setDate(nextGeneration.getDate() + 1);
+        break;
+      case 'weekly':
+        nextGeneration.setDate(nextGeneration.getDate() + 7);
+        break;
+      case 'biweekly':
+        nextGeneration.setDate(nextGeneration.getDate() + 14);
+        break;
+      case 'monthly':
+        nextGeneration.setMonth(nextGeneration.getMonth() + 1);
+        break;
+      case 'quarterly':
+        nextGeneration.setMonth(nextGeneration.getMonth() + 3);
+        break;
+      case 'yearly':
+        nextGeneration.setFullYear(nextGeneration.getFullYear() + 1);
+        break;
+    }
+    
+    const recurringData = {
+      userId: String(userId),
+      debtorName: String(debtorName),
+      amount: numericAmount,
+      description: String(description || ''),
+      phoneNumber: String(phoneNumber || ''),
+      frequency,
+      startDate,
+      endDate,
+      dayOfMonth: dayOfMonth ? Number(dayOfMonth) : null,
+      dayOfWeek: dayOfWeek ? Number(dayOfWeek) : null,
+      createdAt: now,
+      updatedAt: now,
+      lastGeneratedDate: now,
+      nextGenerationDate: nextGeneration.toISOString(),
+      isActive: true,
+      generatedDebtIds: []
+    };
+    
+    // Add groupId if present
+    if (groupId) {
+      recurringData.groupId = String(groupId);
+    }
+    
+    console.log('Recurring debt template being saved:', recurringData);
+    const docRef = await addDoc(recurringDebtsRef, recurringData);
+    console.log(`Recurring debt template created with ID: ${docRef.id}`);
+    
+    return {
+      id: docRef.id,
+      ...recurringData,
+    };
+  } catch (error) {
+    console.error('Error creating recurring debt template:', error);
     throw error;
   }
 };
@@ -395,9 +552,24 @@ export const updatePaymentMethods = async (userId, paymentMethods) => {
  * @param {Object} groupData - Group information
  * @param {string} groupData.name - Name of the debt group
  * @param {string} [groupData.description] - Optional description
+ * @param {boolean} [groupData.isRecurring] - Whether the group is recurring
+ * @param {string} [groupData.frequency] - Frequency of recurring (daily, weekly, etc.)
+ * @param {Date|string} [groupData.startDate] - Start date of recurring
+ * @param {Date|string|null} [groupData.endDate] - End date of recurring (optional)
+ * @param {number} [groupData.dayOfMonth] - Day of month for monthly/quarterly/yearly frequencies
+ * @param {number} [groupData.dayOfWeek] - Day of week for weekly/biweekly frequencies
  * @returns {Promise<Object>} - Created debt group with ID
  */
-export const createDebtGroup = async (userId, { name, description = '' }) => {
+export const createDebtGroup = async (userId, { 
+  name, 
+  description = '',
+  isRecurring = false,
+  frequency = 'monthly',
+  startDate = new Date().toISOString(),
+  endDate = null,
+  dayOfMonth = null,
+  dayOfWeek = null
+}) => {
   try {
     if (!userId) {
       throw new Error('userId is required');
@@ -419,6 +591,26 @@ export const createDebtGroup = async (userId, { name, description = '' }) => {
       userId: String(userId)
     };
     
+    // Add recurring fields if applicable
+    if (isRecurring) {
+      // Make sure dates are ISO strings
+      const startDateIso = typeof startDate === 'string' ? startDate : startDate.toISOString();
+      const endDateIso = endDate ? (typeof endDate === 'string' ? endDate : endDate.toISOString()) : null;
+      
+      Object.assign(groupData, {
+        isRecurring: true,
+        frequency,
+        startDate: startDateIso,
+        endDate: endDateIso,
+        dayOfMonth: frequency === 'monthly' || frequency === 'quarterly' || frequency === 'yearly' ? (dayOfMonth || 1) : null,
+        dayOfWeek: frequency === 'weekly' || frequency === 'biweekly' ? (dayOfWeek || 1) : null,
+        lastGeneratedDate: now,
+        nextGenerationDate: calculateNextGenerationDate(startDateIso, frequency),
+        isActive: true,
+        generatedGroupIds: []
+      });
+    }
+    
     console.log('Group data being saved:', groupData);
     const docRef = await addDoc(userGroupsRef, groupData);
     console.log(`Debt group created with ID: ${docRef.id}`);
@@ -432,6 +624,42 @@ export const createDebtGroup = async (userId, { name, description = '' }) => {
     throw error;
   }
 };
+
+/**
+ * Calculate the next generation date for recurring items
+ * @param {string} currentDate - Current date in ISO format
+ * @param {string} frequency - Frequency (daily, weekly, etc.)
+ * @returns {string} - Next generation date in ISO format
+ */
+function calculateNextGenerationDate(currentDate, frequency) {
+  // Use the provided date as the reference point
+  const date = new Date(currentDate);
+  
+  switch (frequency) {
+    case 'daily':
+      date.setDate(date.getDate() + 1);
+      break;
+    case 'weekly':
+      date.setDate(date.getDate() + 7);
+      break;
+    case 'biweekly':
+      date.setDate(date.getDate() + 14);
+      break;
+    case 'monthly':
+      date.setMonth(date.getMonth() + 1);
+      break;
+    case 'quarterly':
+      date.setMonth(date.getMonth() + 3);
+      break;
+    case 'yearly':
+      date.setFullYear(date.getFullYear() + 1);
+      break;
+    default:
+      date.setMonth(date.getMonth() + 1); // Default to monthly
+  }
+  
+  return date.toISOString();
+}
 
 /**
  * Add a debt to a debt group
@@ -753,6 +981,109 @@ export const getDebtGroupWithDebts = async (userId, groupId) => {
     return groupData;
   } catch (error) {
     console.error('Error getting debt group with debts:', error);
+    throw error;
+  }
+};
+
+/**
+ * Cancel a recurring debt series
+ * @param {string} userId - ID of the user who is owed money
+ * @param {string} recurringId - ID of the recurring debt to cancel
+ * @returns {Promise<void>}
+ */
+export const cancelRecurringDebt = async (userId, recurringId) => {
+  try {
+    if (!userId || !recurringId) {
+      throw new Error('userId and recurringId are required');
+    }
+    
+    console.log(`Canceling recurring debt ${recurringId} for user ${userId}`);
+    const recurringRef = doc(db, 'users', userId, 'recurringDebts', recurringId);
+    const now = new Date().toISOString();
+    
+    // Mark the recurring debt as inactive
+    await updateDoc(recurringRef, {
+      isActive: false,
+      updatedAt: now
+    });
+    
+    console.log(`Recurring debt ${recurringId} marked as inactive`);
+  } catch (error) {
+    console.error('Error canceling recurring debt:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get all recurring debts for a user
+ * @param {string} userId - ID of the user
+ * @returns {Promise<Array>} - Array of recurring debt documents
+ */
+export const fetchRecurringDebts = async (userId) => {
+  try {
+    if (!userId) {
+      console.warn('fetchRecurringDebts called without a userId');
+      return [];
+    }
+    
+    console.log(`Fetching recurring debts for user: ${userId}`);
+    
+    // Get all recurring debts for the user
+    const recurringDebtsRef = collection(db, 'users', userId, 'recurringDebts');
+    const q = query(recurringDebtsRef, orderBy('createdAt', 'desc'));
+    const querySnapshot = await getDocs(q);
+    
+    console.log(`Query returned ${querySnapshot.size} recurring debt documents`);
+    
+    const recurringDebts = [];
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      console.log(`Recurring debt document ${doc.id}:`, data);
+      recurringDebts.push({
+        id: doc.id,
+        ...data,
+      });
+    });
+    
+    return recurringDebts;
+  } catch (error) {
+    console.error('Error fetching recurring debts:', error);
+    throw error;
+  }
+ };
+
+/**
+ * Get a recurring debt template by ID
+ * @param {string} userId - ID of the user
+ * @param {string} recurringId - ID of the recurring debt template
+ * @returns {Promise<Object|null>} - Recurring debt template or null if not found
+ */
+export const getRecurringDebtById = async (userId, recurringId) => {
+  try {
+    if (!userId || !recurringId) {
+      console.warn('getRecurringDebtById called without required parameters');
+      return null;
+    }
+    
+    console.log(`Fetching recurring debt template ${recurringId} for user ${userId}`);
+    
+    // Get the recurring debt document
+    const recurringRef = doc(db, 'users', userId, 'recurringDebts', recurringId);
+    const docSnap = await getDoc(recurringRef);
+    
+    if (!docSnap.exists()) {
+      console.log(`Recurring debt template ${recurringId} not found`);
+      return null;
+    }
+    
+    const recurringDebt = {
+      id: docSnap.id,
+      ...docSnap.data()
+    };
+    
+    return recurringDebt;
+  } catch (error) {
+    console.error('Error fetching recurring debt template:', error);
     throw error;
   }
 }; 

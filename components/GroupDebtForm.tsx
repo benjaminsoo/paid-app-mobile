@@ -16,12 +16,15 @@ import AddGroupMember from './AddGroupMember';
 import GroupMemberItem, { GroupMember } from './GroupMemberItem';
 import GroupDebtSummary from './GroupDebtSummary';
 import ContactsModal from './ContactsModal';
+import RecurringOptionsComponent from './RecurringOptionsComponent';
+import { RecurringOptions } from '@/firebase/models';
 
 interface GroupDebtFormProps {
   onCreateGroup: (
     groupName: string, 
     groupDescription: string, 
-    members: Omit<GroupMember, 'id'>[]
+    members: Omit<GroupMember, 'id'>[],
+    recurringOptions: RecurringOptions
   ) => Promise<void>;
   isLoading: boolean;
 }
@@ -36,6 +39,14 @@ export default function GroupDebtForm({ onCreateGroup, isLoading }: GroupDebtFor
   const [showAddMember, setShowAddMember] = useState(false);
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
   const [contactsModalVisible, setContactsModalVisible] = useState(false);
+  const [sharedAmount, setSharedAmount] = useState('');
+  const [recurringOptions, setRecurringOptions] = useState<RecurringOptions>({
+    isRecurring: false,
+    frequency: 'monthly',
+    startDate: new Date(),
+    endDate: null,
+    dayOfMonth: 1
+  });
   
   // Handle adding a new member
   const handleAddMember = (member: Omit<GroupMember, 'id'>) => {
@@ -103,6 +114,27 @@ export default function GroupDebtForm({ onCreateGroup, isLoading }: GroupDebtFor
     ));
   };
   
+  // Apply the same amount to all members
+  const applySharedAmountToAll = () => {
+    if (!sharedAmount.trim() || isNaN(parseFloat(sharedAmount))) {
+      Alert.alert('Invalid Amount', 'Please enter a valid amount');
+      return;
+    }
+    
+    if (members.length === 0) {
+      Alert.alert('No Members', 'Add members first before setting a shared amount');
+      return;
+    }
+    
+    // Update all members with the same amount
+    setMembers(members.map(member => ({
+      ...member,
+      amount: sharedAmount.trim()
+    })));
+    
+    Alert.alert('Amount Applied', `$${sharedAmount} has been applied to all ${members.length} members`);
+  };
+  
   // Handle multiple contacts selection
   const handleSelectMultipleContacts = (contacts: Contacts.Contact[]) => {
     if (contacts.length === 0) return;
@@ -166,12 +198,19 @@ export default function GroupDebtForm({ onCreateGroup, isLoading }: GroupDebtFor
       // Convert members to the format expected by the onCreateGroup function
       const memberData = members.map(({ id, ...rest }) => rest);
       
-      await onCreateGroup(groupName, groupDescription, memberData);
+      await onCreateGroup(groupName, groupDescription, memberData, recurringOptions);
       
       // Reset form after successful submission
       setGroupName('');
       setGroupDescription('');
       setMembers([]);
+      setRecurringOptions({
+        isRecurring: false,
+        frequency: 'monthly',
+        startDate: new Date(),
+        endDate: null,
+        dayOfMonth: 1
+      });
     } catch (error) {
       console.error('Error creating group debt:', error);
       Alert.alert('Error', 'There was a problem creating the group debt. Please try again.');
@@ -209,6 +248,47 @@ export default function GroupDebtForm({ onCreateGroup, isLoading }: GroupDebtFor
               textAlignVertical="top"
             />
           </View>
+          
+          {/* Add Recurring Options */}
+          <View style={styles.formGroup}>
+            <RecurringOptionsComponent
+              options={recurringOptions}
+              onChange={setRecurringOptions}
+            />
+          </View>
+          
+          {/* Shared Amount Section */}
+          {members.length > 0 && (
+            <View style={styles.formGroup}>
+              <View style={styles.labelContainer}>
+                <Ionicons name="cash-outline" size={18} color={Colors.light.tint} style={styles.labelIcon} />
+                <Text style={styles.label}>Set Same Amount for Everyone</Text>
+              </View>
+              <View style={styles.sharedAmountContainer}>
+                <View style={styles.sharedAmountInput}>
+                  <Text style={styles.currencySymbol}>$</Text>
+                  <TextInput
+                    style={styles.amountInput}
+                    placeholder="0.00"
+                    placeholderTextColor="rgba(255,255,255,0.4)"
+                    keyboardType="decimal-pad"
+                    value={sharedAmount}
+                    onChangeText={setSharedAmount}
+                    selectionColor={Colors.light.tint}
+                  />
+                </View>
+                <Pressable
+                  style={({pressed}) => [
+                    styles.applyButton,
+                    pressed && {opacity: 0.8}
+                  ]}
+                  onPress={applySharedAmountToAll}
+                >
+                  <Text style={styles.applyButtonText}>Apply to All</Text>
+                </Pressable>
+              </View>
+            </View>
+          )}
         </View>
         
         {/* Group Members */}
@@ -483,5 +563,55 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'AeonikBlack-Regular',
     marginTop: 8,
+  },
+  labelContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  labelIcon: {
+    marginRight: 8,
+  },
+  sharedAmountContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  sharedAmountInput: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  currencySymbol: {
+    color: '#fff',
+    fontSize: 18,
+    fontFamily: 'Aeonik-Black',
+    marginRight: 8,
+  },
+  amountInput: {
+    color: '#fff',
+    fontSize: 16,
+    fontFamily: 'AeonikBlack-Regular',
+    flex: 1,
+  },
+  applyButton: {
+    backgroundColor: Colors.light.tint,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    minWidth: 100,
+    alignItems: 'center',
+  },
+  applyButtonText: {
+    color: '#000',
+    fontSize: 14,
+    fontFamily: 'Aeonik-Black',
   },
 }); 

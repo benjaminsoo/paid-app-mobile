@@ -160,6 +160,12 @@ export default function GroupDebtCard({ group, onMarkPaid, onDelete }: GroupDebt
               <Text style={styles.completedText}>PAID</Text>
             </View>
           )}
+          {group.isRecurring && (
+            <View style={styles.recurringBadge}>
+              <Ionicons name="refresh" size={10} color={Colors.light.tint} />
+              <Text style={styles.recurringText}>Recurring</Text>
+            </View>
+          )}
         </View>
         
         <View style={styles.amountSection}>
@@ -489,5 +495,20 @@ const styles = StyleSheet.create({
   },
   deleteButtonText: {
     color: '#FF5A5A',
+  },
+  recurringBadge: {
+    backgroundColor: 'rgba(74, 226, 144, 0.2)',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginLeft: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  recurringText: {
+    color: Colors.light.tint,
+    fontSize: 10,
+    fontFamily: 'Aeonik-Black',
+    marginLeft: 4,
   }
 }); 

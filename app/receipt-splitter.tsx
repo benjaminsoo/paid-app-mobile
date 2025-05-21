@@ -778,10 +778,7 @@ export default function ReceiptSplitterScreen() {
       
       <Stack.Screen
         options={{
-          title: 'Receipt Splitter',
-          headerStyle: { backgroundColor: '#121212' },
-          headerTintColor: '#fff',
-          headerTitleStyle: { fontFamily: 'Aeonik-Black' },
+          headerShown: false
         }}
       />
       

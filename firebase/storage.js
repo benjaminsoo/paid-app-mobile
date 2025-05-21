@@ -1,9 +1,6 @@
-import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { app } from './config';
+import { ref, uploadBytesResumable, getDownloadURL, deleteObject, listAll } from 'firebase/storage';
+import { storage } from './config';
 import * as FileSystem from 'expo-file-system';
-
-// Initialize Firebase Storage
-const storage = getStorage(app);
 
 /**
  * Upload an image to Firebase Storage
@@ -96,4 +93,48 @@ export const uploadProfileImage = async (userId, uri, onProgress = undefined) =>
 export const uploadBackgroundImage = async (userId, uri, onProgress = undefined) => {
   const path = `backgroundImages/${userId}/${uri.split('/').pop()}`;
   return await uploadImage(uri, path, onProgress);
+};
+
+/**
+ * Delete all storage files associated with a user
+ * @param {string} userId - User ID
+ * @returns {Promise<void>}
+ */
+export const deleteUserStorageFiles = async (userId) => {
+  try {
+    console.log(`Deleting storage files for user: ${userId}`);
+    
+    // Delete profile images
+    const profileImagesRef = ref(storage, `profileImages/${userId}`);
+    try {
+      const profileList = await listAll(profileImagesRef);
+      const profileDeletions = profileList.items.map(itemRef => {
+        return deleteObject(itemRef);
+      });
+      await Promise.all(profileDeletions);
+      console.log(`Deleted ${profileDeletions.length} profile images`);
+    } catch (error) {
+      // Ignore errors if the folder doesn't exist
+      console.log('No profile images found or error deleting them:', error);
+    }
+    
+    // Delete background images
+    const backgroundImagesRef = ref(storage, `backgroundImages/${userId}`);
+    try {
+      const backgroundList = await listAll(backgroundImagesRef);
+      const backgroundDeletions = backgroundList.items.map(itemRef => {
+        return deleteObject(itemRef);
+      });
+      await Promise.all(backgroundDeletions);
+      console.log(`Deleted ${backgroundDeletions.length} background images`);
+    } catch (error) {
+      // Ignore errors if the folder doesn't exist
+      console.log('No background images found or error deleting them:', error);
+    }
+    
+    console.log('Successfully deleted all user storage files');
+  } catch (error) {
+    console.error('Error deleting user storage files:', error);
+    // Don't throw, to ensure account deletion continues even if storage cleanup fails
+  }
 }; 

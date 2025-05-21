@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { StyleSheet, ScrollView, View, Text, Pressable, TextInput, ActivityIndicator, Platform, Image, TouchableOpacity } from 'react-native';
+import { StyleSheet, ScrollView, View, Text, Pressable, TextInput, ActivityIndicator, Platform, Image, TouchableOpacity, Modal, Alert, ScrollView as ScrollViewType } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import Constants from 'expo-constants';
 
@@ -34,8 +34,10 @@ const logError = (...args: any[]) => {
 
 export default function ProfileEditScreen() {
   const colorScheme = useColorScheme();
-  const { currentUser, userProfile, refreshUserProfile } = useAuth();
+  const { currentUser, userProfile, refreshUserProfile, deleteAccount, logout } = useAuth();
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const scrollViewRef = useRef<ScrollView>(null);
   
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,6 +63,14 @@ export default function ProfileEditScreen() {
   
   // Use refs to track initialization state
   const initialized = useRef(false);
+
+  // Add these new state variables
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletionPassword, setDeletionPassword] = useState('');
+  const [deletionLoading, setDeletionLoading] = useState(false);
+
+  // Add state to track when we should scroll to delete section
+  const [shouldScrollToDelete, setShouldScrollToDelete] = useState(false);
 
   // Initialize form data only once when component mounts and userProfile is available
   useEffect(() => {
@@ -119,6 +129,34 @@ export default function ProfileEditScreen() {
     // Mark as initialized so we don't run this again
     initialized.current = true;
   }, [userProfile]);
+
+  // Add additional useEffect to handle scrolling to delete section
+  useEffect(() => {
+    if (params.action === 'delete' && scrollViewRef.current) {
+      // Set a flag to scroll after render is complete
+      setShouldScrollToDelete(true);
+    }
+  }, [params]);
+  
+  // Effect to handle the actual scrolling after render is complete
+  useEffect(() => {
+    if (shouldScrollToDelete && scrollViewRef.current) {
+      // Use a timeout to ensure the UI is fully rendered
+      const timer = setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+        setShouldScrollToDelete(false);
+        
+        // Show the delete modal after scrolling
+        const deleteTimer = setTimeout(() => {
+          setShowDeleteModal(true);
+        }, 500);
+        
+        return () => clearTimeout(deleteTimer);
+      }, 300);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [shouldScrollToDelete]);
 
   // Pick an image from the gallery
   const pickImage = async () => {
@@ -282,6 +320,70 @@ export default function ProfileEditScreen() {
     }
   };
 
+  // Add a new function to handle account deletion request
+  const handleDeleteAccount = async () => {
+    if (!deletionPassword) {
+      Alert.alert('Error', 'Please enter your password to confirm account deletion');
+      return;
+    }
+    
+    try {
+      setDeletionLoading(true);
+      await deleteAccount(deletionPassword);
+      
+      // Navigate to login if successful
+      router.replace('/auth/login');
+    } catch (error: any) {
+      // Handle specific error cases
+      if (error.code === 'auth/wrong-password') {
+        Alert.alert('Error', 'Incorrect password. Please try again.');
+      } else if (error.code === 'auth/requires-recent-login') {
+        Alert.alert(
+          'Session Expired', 
+          'For security reasons, please log out and log back in before deleting your account.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Log Out', 
+              style: 'destructive', 
+              onPress: async () => {
+                try {
+                  await logout();
+                  router.replace('/auth/login');
+                } catch (e) {
+                  console.error('Error logging out:', e);
+                }
+              }
+            }
+          ]
+        );
+      } else {
+        Alert.alert('Error', error.message || 'Failed to delete account. Please try again later.');
+      }
+      console.error('Account deletion error:', error);
+    } finally {
+      setDeletionLoading(false);
+      setShowDeleteModal(false);
+      setDeletionPassword('');
+    }
+  };
+  
+  // Add a new function to show the deletion confirmation dialog
+  const showDeleteConfirmation = () => {
+    Alert.alert(
+      'Delete Account',
+      'Are you sure you want to permanently delete your account? This action cannot be undone and all your data will be lost.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete Account', 
+          style: 'destructive', 
+          onPress: () => setShowDeleteModal(true)
+        }
+      ]
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar style="light" />
@@ -307,6 +409,7 @@ export default function ProfileEditScreen() {
       </View>
       
       <ScrollView 
+        ref={scrollViewRef}
         style={styles.scrollContainer}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -640,6 +743,90 @@ export default function ProfileEditScreen() {
           </View>
         </View>
         
+        {/* Account Settings Section */}
+        <View style={styles.sectionContainer}>
+          <Text style={styles.sectionTitle}>Account Settings</Text>
+          
+          <View style={styles.dangerZone}>
+            <Text style={styles.dangerZoneTitle}>Danger Zone</Text>
+            <Text style={styles.dangerZoneDescription}>
+              Permanently delete your account and all associated data
+            </Text>
+            
+            <TouchableOpacity 
+              style={styles.deleteAccountButton}
+              onPress={showDeleteConfirmation}
+            >
+              <Ionicons name="trash-outline" size={20} color="#fff" style={styles.deleteIcon} />
+              <Text style={styles.deleteButtonText}>Delete Account</Text>
+            </TouchableOpacity>
+          </View>
+          
+          {/* Modal for Password Confirmation */}
+          <Modal
+            animationType="slide"
+            transparent={true}
+            visible={showDeleteModal}
+            onRequestClose={() => setShowDeleteModal(false)}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContainer}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Confirm Account Deletion</Text>
+                  <TouchableOpacity
+                    onPress={() => setShowDeleteModal(false)}
+                    disabled={deletionLoading}
+                  >
+                    <Ionicons name="close" size={24} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+                
+                <Text style={styles.modalDescription}>
+                  Please enter your password to permanently delete your account
+                </Text>
+                
+                <TextInput
+                  style={styles.passwordInput}
+                  placeholder="Enter your password"
+                  placeholderTextColor="rgba(255,255,255,0.4)"
+                  secureTextEntry
+                  value={deletionPassword}
+                  onChangeText={setDeletionPassword}
+                  autoCapitalize="none"
+                  editable={!deletionLoading}
+                />
+                
+                <TouchableOpacity
+                  style={[
+                    styles.confirmDeleteButton,
+                    deletionLoading && styles.disabledButton
+                  ]}
+                  onPress={handleDeleteAccount}
+                  disabled={deletionLoading || !deletionPassword}
+                >
+                  {deletionLoading ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <>
+                      <Ionicons name="trash-outline" size={18} color="#fff" style={styles.deleteIcon} />
+                      <Text style={styles.confirmDeleteText}>Permanently Delete Account</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+                
+                {!deletionLoading && (
+                  <TouchableOpacity
+                    style={styles.cancelButton}
+                    onPress={() => setShowDeleteModal(false)}
+                  >
+                    <Text style={styles.cancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          </Modal>
+        </View>
+        
         {/* Save Button */}
         <Pressable 
           style={({pressed}) => [
@@ -941,5 +1128,108 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 16,
     lineHeight: 20,
+  },
+  dangerZone: {
+    marginTop: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#FF3B30',
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 59, 48, 0.08)',
+  },
+  dangerZoneTitle: {
+    fontSize: 18,
+    fontFamily: 'Aeonik-Black',
+    color: '#FF3B30',
+    marginBottom: 8,
+  },
+  dangerZoneDescription: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.7)',
+    marginBottom: 16,
+  },
+  deleteAccountButton: {
+    backgroundColor: '#FF3B30',
+    borderRadius: 8,
+    padding: 16,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  deleteButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontFamily: 'Aeonik-Black',
+  },
+  deleteIcon: {
+    marginRight: 8,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContainer: {
+    width: '100%',
+    backgroundColor: '#1A1A1A',
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontFamily: 'Aeonik-Black',
+    color: '#FF3B30',
+  },
+  modalDescription: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.8)',
+    marginBottom: 20,
+  },
+  passwordInput: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    color: '#fff',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    marginBottom: 20,
+  },
+  confirmDeleteButton: {
+    backgroundColor: '#FF3B30',
+    borderRadius: 8,
+    padding: 16,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  disabledButton: {
+    opacity: 0.5,
+  },
+  confirmDeleteText: {
+    color: '#fff',
+    fontSize: 16,
+    fontFamily: 'Aeonik-Black',
+  },
+  cancelButton: {
+    padding: 12,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cancelText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 16,
   },
 }); 
