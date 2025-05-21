@@ -14,6 +14,33 @@ import { getDebtGroupWithDebts, markDebtAsPaid, deleteDebtGroup } from '@/fireba
 import { DebtGroup, Debt } from '@/firebase/models';
 import eventEmitter from '@/utils/eventEmitter';
 
+// Add a formatter function near the top of the component
+const formatDate = (dateString: string) => {
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', { 
+    year: 'numeric', 
+    month: 'long', 
+    day: 'numeric' 
+  });
+};
+
+// Add a formatter function to get the day of week name
+const getDayOfWeekName = (dayNumber: number) => {
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  return days[dayNumber] || '';
+};
+
+// Add a formatter function to get the ordinal suffix for day of month
+const getOrdinalSuffix = (day: number) => {
+  if (day > 3 && day < 21) return 'th';
+  switch (day % 10) {
+    case 1: return 'st';
+    case 2: return 'nd';
+    case 3: return 'rd';
+    default: return 'th';
+  }
+};
+
 export default function GroupDetailScreen() {
   const router = useRouter();
   const { groupId } = useLocalSearchParams();
@@ -268,6 +295,54 @@ export default function GroupDetailScreen() {
               <Text style={styles.progressText}>{completionPercentage}% paid</Text>
             </View>
           </LinearGradient>
+          
+          {/* Recurring Information Section */}
+          {group.isRecurring && (
+            <LinearGradient
+              colors={['rgba(35,35,35,0.98)', 'rgba(25,25,25,0.95)']}
+              style={styles.recurringCard}
+            >
+              <View style={styles.recurringHeader}>
+                <Ionicons name="repeat" size={20} color={Colors.light.tint} style={styles.recurringIcon} />
+                <Text style={styles.recurringTitle}>Recurring Group</Text>
+              </View>
+              
+              <View style={styles.recurringInfoContainer}>
+                <View style={styles.recurringInfoRow}>
+                  <Text style={styles.recurringInfoLabel}>Frequency:</Text>
+                  <Text style={styles.recurringInfoValue}>
+                    {group.frequency === 'daily' ? 'Daily' :
+                     group.frequency === 'weekly' ? 'Weekly' :
+                     group.frequency === 'biweekly' ? 'Every 2 Weeks' :
+                     group.frequency === 'monthly' ? 'Monthly' :
+                     group.frequency === 'quarterly' ? 'Quarterly' :
+                     group.frequency === 'yearly' ? 'Yearly' : 'Unknown'}
+                  </Text>
+                </View>
+                
+                {group.startDate && (
+                  <View style={styles.recurringInfoRow}>
+                    <Text style={styles.recurringInfoLabel}>Started:</Text>
+                    <Text style={styles.recurringInfoValue}>{formatDate(group.startDate)}</Text>
+                  </View>
+                )}
+                
+                {group.endDate && (
+                  <View style={styles.recurringInfoRow}>
+                    <Text style={styles.recurringInfoLabel}>Ends:</Text>
+                    <Text style={styles.recurringInfoValue}>{formatDate(group.endDate)}</Text>
+                  </View>
+                )}
+                
+                {group.nextGenerationDate && (
+                  <View style={[styles.recurringInfoRow, styles.lastInfoRow]}>
+                    <Text style={styles.recurringInfoLabel}>Next Due:</Text>
+                    <Text style={styles.recurringInfoValue}>{formatDate(group.nextGenerationDate)}</Text>
+                  </View>
+                )}
+              </View>
+            </LinearGradient>
+          )}
           
           {/* Debts List */}
           <View style={styles.debtsContainer}>
@@ -613,5 +688,58 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     textAlign: 'center',
     padding: 20,
+  },
+  recurringCard: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(74, 226, 144, 0.2)',
+    padding: 20,
+    marginBottom: 24,
+    backgroundColor: 'rgba(74, 226, 144, 0.05)',
+  },
+  recurringHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  recurringIcon: {
+    marginRight: 8,
+  },
+  recurringTitle: {
+    fontSize: 18,
+    color: Colors.light.tint,
+    fontFamily: 'Aeonik-Black',
+  },
+  recurringInfoContainer: {
+    backgroundColor: 'rgba(30,30,30,0.6)',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(74, 226, 144, 0.1)',
+  },
+  recurringInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  recurringInfoLabel: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.7)',
+    fontFamily: 'AeonikBlack-Regular',
+  },
+  recurringInfoValue: {
+    fontSize: 14,
+    color: '#fff',
+    fontFamily: 'Aeonik-Black',
+    textAlign: 'right',
+    flex: 1,
+    marginLeft: 10,
+  },
+  lastInfoRow: {
+    borderBottomWidth: 0,
   },
 }); 
