@@ -149,6 +149,10 @@ export default function ProfileEditScreen() {
         // Show the delete modal after scrolling
         const deleteTimer = setTimeout(() => {
           setShowDeleteModal(true);
+          // Clear the action param from the URL to prevent infinite popups
+          if (params.action === 'delete') {
+            router.setParams({ action: '' });
+          }
         }, 500);
         
         return () => clearTimeout(deleteTimer);
@@ -156,7 +160,7 @@ export default function ProfileEditScreen() {
       
       return () => clearTimeout(timer);
     }
-  }, [shouldScrollToDelete]);
+  }, [shouldScrollToDelete, router, params]);
 
   // Pick an image from the gallery
   const pickImage = async () => {
@@ -774,7 +778,13 @@ export default function ProfileEditScreen() {
                 <View style={styles.modalHeader}>
                   <Text style={styles.modalTitle}>Confirm Account Deletion</Text>
                   <TouchableOpacity
-                    onPress={() => setShowDeleteModal(false)}
+                    onPress={() => {
+                      setShowDeleteModal(false);
+                      if (params.action === 'delete') {
+                        // Navigate back if we came from the explore page
+                        router.back();
+                      }
+                    }}
                     disabled={deletionLoading}
                   >
                     <Ionicons name="close" size={24} color="#fff" />
@@ -817,7 +827,13 @@ export default function ProfileEditScreen() {
                 {!deletionLoading && (
                   <TouchableOpacity
                     style={styles.cancelButton}
-                    onPress={() => setShowDeleteModal(false)}
+                    onPress={() => {
+                      setShowDeleteModal(false);
+                      if (params.action === 'delete') {
+                        // Navigate back if we came from the explore page
+                        router.back();
+                      }
+                    }}
                   >
                     <Text style={styles.cancelText}>Cancel</Text>
                   </TouchableOpacity>
