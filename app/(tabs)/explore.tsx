@@ -605,8 +605,8 @@ export default function ProfileScreen() {
                     <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
                     <Text style={styles.deleteAccountButtonText}>Delete Account</Text>
                   </View>
-                </LinearGradient>
-              </Pressable>
+              </LinearGradient>
+            </Pressable>
             )}
             
             {/* Sign Out Button */}

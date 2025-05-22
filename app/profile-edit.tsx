@@ -7,6 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
@@ -18,6 +19,9 @@ import { PaymentMethod } from '@/firebase/models';
 // Define the default images using require
 const DefaultProfileImage = require('@/assets/images/Paid-Default-Profile-Image.png');
 const DefaultBackgroundImage = require('@/assets/images/Paid-Default-Background-Image.png');
+
+// Constants for AsyncStorage
+const DATA_CONSENT_KEY = 'PAID_APP_DATA_CONSENT';
 
 // Only log in development mode
 const logDebug = (...args: any[]) => {
@@ -234,13 +238,81 @@ export default function ProfileEditScreen() {
     });
   }, []);
 
-  // Handle form submission
+  // Update the handleSubmit function to check consent status first
   const handleSubmit = async () => {
     if (!currentUser) {
       setError('You must be logged in to update your profile');
       return;
     }
     
+    try {
+      // Check if user has already consented
+      const hasConsented = await checkDataConsent();
+      
+      if (hasConsented) {
+        // User already consented, proceed directly
+        await uploadProfileData();
+      } else {
+        // Show consent dialog
+        showDataConsentAlert();
+      }
+    } catch (error) {
+      console.error('Error checking consent status:', error);
+      // If there's an error checking consent, show the dialog to be safe
+      showDataConsentAlert();
+    }
+  };
+
+  // Add function to check if user has already consented
+  const checkDataConsent = async () => {
+    try {
+      const consentValue = await AsyncStorage.getItem(DATA_CONSENT_KEY);
+      return consentValue === 'true';
+    } catch (error) {
+      console.error('Error retrieving consent status:', error);
+      return false;
+    }
+  };
+
+  // Add function to save consent status
+  const saveDataConsent = async () => {
+    try {
+      await AsyncStorage.setItem(DATA_CONSENT_KEY, 'true');
+    } catch (error) {
+      console.error('Error saving consent status:', error);
+    }
+  };
+
+  // Update the data consent alert
+  const showDataConsentAlert = () => {
+    Alert.alert(
+      'Data Privacy Notice',
+      'Your profile information will be uploaded to our secure server. Your information will ONLY be used to provide the app\'s services, and will not be shared with any third parties. This is a one-time notice and by consenting you agree to future profile updates.',
+      [
+        { 
+          text: 'Cancel', 
+          style: 'cancel',
+          onPress: () => {
+            // User declined, don't upload
+            console.log('User declined data upload consent');
+          }
+        },
+        {
+          text: 'I Consent',
+          onPress: async () => {
+            // Save user consent
+            await saveDataConsent();
+            // User consented, proceed with profile update
+            uploadProfileData();
+          }
+        }
+      ],
+      { cancelable: false }
+    );
+  };
+
+  // Move the actual profile update code to a new function
+  const uploadProfileData = async () => {
     try {
       setSaving(true);
       setError(null);
