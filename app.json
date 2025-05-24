@@ -12,8 +12,9 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.benjaminsoo.paidapp",
       "infoPlist": {
-        "NSContactsUsageDescription": "This app needs access to your contacts to select people who owe you money.",
+        "NSContactsUsageDescription": "This app needs access to your contacts to select people who owe you money. When you add debtors from contacts, their number and name will be saved to our database, so you can easily send a text message reminder to them with one tap. This information will not be shared with any third parties, and by clicking conitnue, you consent to the upload of your contact information.",
         "NSCameraUsageDescription": "This app needs access to your camera to scan receipts and create debts.",
+        "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to select a background and profile image for your account. For example, from your gallery, you can choose a photo of yourself as your profile image, and any photo you would like as your background image. These pictures will be uploaded to our database, and will be used on your profile and Paid link, and will not be shared with any third parties. By clicking continue, you consent to the upload of these images.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -65,7 +66,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "The app accesses your photos to let you share them with your friends.",
+          "photosPermission": "This app needs access to your photo library to select receipt images for scanning and creating expense records. For example, you can choose a photo of a restaurant receipt from your gallery to automatically extract the total amount and create a debt record.",
           "cameraPermission": "The app needs access to your camera to scan receipts and create debts."
         }
       ],

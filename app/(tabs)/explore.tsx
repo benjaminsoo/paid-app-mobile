@@ -1,16 +1,16 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { StyleSheet, ScrollView, View, Text, ActivityIndicator, Pressable, Platform, Share, Image, Modal, Dimensions, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import Constants from 'expo-constants';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Dimensions, Image, Linking, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Colors } from '@/constants/Colors';
-import { useColorScheme } from '@/hooks/useColorScheme';
 import { useAuth } from '@/contexts/AuthContext';
+import { useColorScheme } from '@/hooks/useColorScheme';
 
 // Only log in development mode
 const isDevelopment = Constants.expoConfig?.extra?.NODE_ENV === 'development';
@@ -629,6 +629,14 @@ export default function ProfileScreen() {
                 </View>
               </LinearGradient>
             </Pressable>
+            
+            {/* Privacy Policy Link */}
+            <Pressable 
+              style={styles.privacyPolicyButton}
+              onPress={() => Linking.openURL('https://trypaid.io/privacy-policy')}
+            >
+              <Text style={styles.privacyPolicyText}>Privacy Policy</Text>
+            </Pressable>
           </View>
         ) : (
           <View style={styles.emptyState}>
@@ -666,6 +674,14 @@ export default function ProfileScreen() {
                   <Text style={styles.signOutButtonText}>Sign Out</Text>
                 </View>
               </LinearGradient>
+            </Pressable>
+            
+            {/* Privacy Policy Link */}
+            <Pressable 
+              style={styles.privacyPolicyButton}
+              onPress={() => Linking.openURL('https://trypaid.io/privacy-policy')}
+            >
+              <Text style={styles.privacyPolicyText}>Privacy Policy</Text>
             </Pressable>
           </View>
         )}
@@ -1264,5 +1280,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Aeonik-Black',
     marginLeft: 8,
+  },
+  privacyPolicyButton: {
+    marginTop: 20,
+    padding: 12,
+    alignItems: 'center',
+  },
+  privacyPolicyText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 14,
+    fontFamily: 'AeonikBlack-Regular',
   },
 });
