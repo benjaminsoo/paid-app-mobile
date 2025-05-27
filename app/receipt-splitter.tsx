@@ -1,31 +1,31 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  StyleSheet, 
-  View, 
-  Text, 
-  Image, 
-  Pressable, 
-  ActivityIndicator, 
-  ScrollView,
-  TextInput,
-  Platform,
-  Alert,
-  Modal
+import { Ionicons } from '@expo/vector-icons';
+import * as Contacts from 'expo-contacts';
+import * as ImagePicker from 'expo-image-picker';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import React, { useEffect, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    Image,
+    Modal,
+    Platform,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
-import * as Contacts from 'expo-contacts';
 
+import ContactsModal from '@/components/ContactsModal';
 import { Colors } from '@/constants/Colors';
 import { useAuth } from '@/contexts/AuthContext';
-import { processReceiptImage, ReceiptData, ReceiptItem as GroqReceiptItem } from '../services/groqService';
-import { createDebt, createDebtGroup, addDebtToGroup } from '@/firebase/firestore';
+import { addDebtToGroup, createDebt, createDebtGroup } from '@/firebase/firestore';
 import eventEmitter from '@/utils/eventEmitter';
-import ContactsModal from '@/components/ContactsModal';
+import { ReceiptItem as GroqReceiptItem, processReceiptImage } from '../services/groqService';
 
 interface Person {
   id: string;
@@ -265,12 +265,30 @@ export default function ReceiptSplitterScreen() {
   
   // Handle price change
   const updateItemPrice = (id: string, newPrice: string) => {
-    const parsedPrice = parseFloat(newPrice);
-    if (isNaN(parsedPrice)) return;
+    // Allow empty string (when user clears the field)
+    if (newPrice === '') {
+      setReceiptItems(receiptItems.map(item => 
+        item.id === id ? { ...item, price: 0 } : item
+      ));
+      return;
+    }
     
-    setReceiptItems(receiptItems.map(item => 
-      item.id === id ? { ...item, price: parsedPrice } : item
-    ));
+    // Only allow numbers and decimal point
+    const sanitizedPrice = newPrice.replace(/[^\d.]/g, '');
+    
+    // Handle multiple decimal points - only keep the first one
+    const parts = sanitizedPrice.split('.');
+    let formattedPrice = parts[0];
+    if (parts.length > 1) {
+      formattedPrice = parts[0] + '.' + parts.slice(1).join('');
+    }
+    
+    const parsedPrice = parseFloat(formattedPrice);
+    if (!isNaN(parsedPrice)) {
+      setReceiptItems(receiptItems.map(item => 
+        item.id === id ? { ...item, price: parsedPrice } : item
+      ));
+    }
   };
   
   // Format a number safely, handling null values
@@ -797,6 +815,18 @@ export default function ReceiptSplitterScreen() {
       />
       
       <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent}>
+        {/* Header with Back Button */}
+        <View style={styles.header}>
+          <Pressable 
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <Ionicons name="arrow-back" size={24} color="#fff" />
+          </Pressable>
+          <Text style={styles.headerTitle}>Receipt Splitter</Text>
+          <View style={styles.headerSpacer} />
+        </View>
+
         {error && (
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>{error}</Text>
@@ -942,10 +972,13 @@ export default function ReceiptSplitterScreen() {
                         <Text style={styles.currencySymbol}>$</Text>
                         <TextInput
                           style={styles.itemPriceInput}
-                          value={item.price.toString()}
+                          value={item.price === 0 ? '' : item.price.toString()}
                           onChangeText={(value) => updateItemPrice(item.id, value)}
                           keyboardType="decimal-pad"
                           selectionColor={Colors.light.tint}
+                          selectTextOnFocus={true}
+                          placeholder="0.00"
+                          placeholderTextColor="rgba(255,255,255,0.3)"
                         />
                       </View>
                       <View style={styles.quantityContainer}>
@@ -966,18 +999,27 @@ export default function ReceiptSplitterScreen() {
                         </Pressable>
                       </View>
                     </View>
-                    
+                  </View>
+                  
+                  <View style={styles.assignButtonRow}>
                     <Pressable
-                      style={styles.assignButton}
+                      style={({ pressed }) => [
+                        styles.assignButton,
+                        (item.assignedTo || (item.splitBetween && item.splitBetween.length > 0)) && styles.assignButtonAssigned,
+                        pressed && { opacity: 0.8, transform: [{ scale: 0.98 }] }
+                      ]}
                       onPress={() => handleShowAssignModal(item.id)}
                     >
                       <Ionicons 
                         name={item.splitBetween && item.splitBetween.length > 1 ? "people-outline" : "person-outline"}
-                        size={14} 
-                        color="rgba(255,255,255,0.7)" 
+                        size={15} 
+                        color={(item.assignedTo || (item.splitBetween && item.splitBetween.length > 0)) ? "#000" : Colors.light.tint} 
                         style={styles.assignIcon} 
                       />
-                      <Text style={styles.assignButtonText}>
+                      <Text style={[
+                        styles.assignButtonText,
+                        (item.assignedTo || (item.splitBetween && item.splitBetween.length > 0)) && styles.assignButtonTextAssigned
+                      ]}>
                         {getAssignmentDisplayText(item)}
                       </Text>
                     </Pressable>
@@ -1356,10 +1398,15 @@ const styles = StyleSheet.create({
   itemContainer: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginBottom: 12,
-    paddingBottom: 12,
+    marginBottom: 16,
+    paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
   itemCheckbox: {
     width: 24,
@@ -1449,21 +1496,51 @@ const styles = StyleSheet.create({
     minWidth: 20,
     textAlign: 'center',
   },
+  assignButtonRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    marginTop: 8,
+  },
   assignButton: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 90,
+    borderWidth: 1,
+    borderColor: 'rgba(74, 226, 144, 0.3)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  assignButtonAssigned: {
+    backgroundColor: Colors.light.tint,
+    borderColor: 'rgba(74, 226, 144, 0.8)',
+    shadowColor: Colors.light.tint,
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 12,
+    transform: [{ scale: 1.02 }],
   },
   assignIcon: {
-    marginRight: 4,
+    marginRight: 8,
   },
   assignButtonText: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 12,
-    fontFamily: 'AeonikBlack-Regular',
+    color: Colors.light.tint,
+    fontSize: 13,
+    fontFamily: 'Aeonik-Black',
+    fontWeight: '600',
+    letterSpacing: 0.3,
+  },
+  assignButtonTextAssigned: {
+    color: '#000',
+    fontWeight: '700',
   },
   totalRow: {
     flexDirection: 'row',
@@ -1816,5 +1893,27 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     textAlign: 'right',
     marginTop: -4,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 8,
+  },
+  backButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  headerTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontFamily: 'Aeonik-Black',
+    marginLeft: 16,
+    flex: 1,
+  },
+  headerSpacer: {
+    width: 40, // Same width as back button for balance
   },
 }); 
