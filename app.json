@@ -60,7 +60,7 @@
       [
         "expo-contacts",
         {
-          "contactsPermission": "This app needs access to your contacts to select people who owe you money."
+          "contactsPermission": "This app needs access to your contacts to select people who owe you money. When you add debtors from contacts, their number and name will be saved to our database, so you can easily send a text message reminder to them with one tap. This information will not be shared with any third parties, and by clicking continue, you consent to the upload of your contact information."
         }
       ],
       [
