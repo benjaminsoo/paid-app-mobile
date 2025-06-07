@@ -1,31 +1,31 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  StyleSheet, 
-  View, 
-  Text, 
-  Image, 
-  Pressable, 
-  ActivityIndicator, 
-  ScrollView,
-  TextInput,
-  Platform,
-  Alert,
-  Modal
+import { Ionicons } from '@expo/vector-icons';
+import * as Contacts from 'expo-contacts';
+import * as ImagePicker from 'expo-image-picker';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import React, { useEffect, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    Image,
+    Modal,
+    Platform,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
-import * as Contacts from 'expo-contacts';
 
+import ContactsModal from '@/components/ContactsModal';
 import { Colors } from '@/constants/Colors';
 import { useAuth } from '@/contexts/AuthContext';
-import { processReceiptImage, ReceiptData, ReceiptItem as GroqReceiptItem } from '../services/groqService';
-import { createDebt, createDebtGroup, addDebtToGroup } from '@/firebase/firestore';
+import { addDebtToGroup, createDebt, createDebtGroup } from '@/firebase/firestore';
 import eventEmitter from '@/utils/eventEmitter';
-import ContactsModal from '@/components/ContactsModal';
+import { ReceiptItem as GroqReceiptItem, processReceiptImage } from '../services/groqService';
 
 interface Person {
   id: string;
@@ -795,6 +795,18 @@ export default function ReceiptSplitterScreen() {
         colors={['rgba(18,18,18,0.98)', 'rgba(28,28,28,0.95)']}
         style={styles.backgroundGradient}
       />
+      
+      {/* Header with Back Button */}
+      <View style={styles.header}>
+        <Pressable 
+          style={styles.backButton}
+          onPress={() => router.back()}
+        >
+          <Ionicons name="chevron-back" size={24} color={Colors.light.tint} />
+        </Pressable>
+        <Text style={styles.headerTitle}>Receipt Splitter</Text>
+        <View style={{width: 24}} />
+      </View>
       
       <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent}>
         {error && (
@@ -1816,5 +1828,25 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     textAlign: 'right',
     marginTop: -4,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(74, 226, 144, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontSize: 18,
+    color: '#fff',
+    fontFamily: 'Aeonik-Black',
   },
 }); 

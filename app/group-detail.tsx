@@ -1,17 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, Pressable, ScrollView, ActivityIndicator, Alert, Linking, Platform } from 'react-native';
-import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Clipboard from 'expo-clipboard';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/ThemedText';
 import { Colors } from '@/constants/Colors';
 import { useAuth } from '@/contexts/AuthContext';
-import { getDebtGroupWithDebts, markDebtAsPaid, deleteDebtGroup } from '@/firebase/firestore';
-import { DebtGroup, Debt } from '@/firebase/models';
+import { deleteDebtGroup, getDebtGroupWithDebts, markDebtAsPaid } from '@/firebase/firestore';
+import { Debt, DebtGroup } from '@/firebase/models';
 import eventEmitter from '@/utils/eventEmitter';
 
 // Add a formatter function near the top of the component

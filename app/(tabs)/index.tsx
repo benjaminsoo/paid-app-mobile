@@ -1,22 +1,21 @@
-import React, { useState, useEffect, useCallback, memo } from 'react';
-import { StyleSheet, View, ScrollView, Text, Platform, ActivityIndicator, FlatList, Pressable, Linking, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
-import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import * as ImagePicker from 'expo-image-picker';
 import * as Clipboard from 'expo-clipboard';
+import * as ImagePicker from 'expo-image-picker';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import React, { memo, useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
-import { Colors } from '@/constants/Colors';
-import { useColorScheme } from '@/hooks/useColorScheme';
-import { useAuth } from '@/contexts/AuthContext';
-import { fetchUserDebts, markDebtAsPaid, getDebtGroups, getDebtGroupWithDebts, deleteDebtGroup, getRecurringDebtById } from '@/firebase/firestore';
-import { Debt, DebtGroup, RecurringFrequency, RecurringDebt } from '@/firebase/models';
-import eventEmitter from '@/utils/eventEmitter';
 import GroupDebtCard from '@/components/GroupDebtCard';
+import { ThemedText } from '@/components/ThemedText';
+import { Colors } from '@/constants/Colors';
+import { useAuth } from '@/contexts/AuthContext';
+import { deleteDebt, deleteDebtGroup, fetchUserDebts, getDebtGroups, getDebtGroupWithDebts, getRecurringDebtById, markDebtAsPaid } from '@/firebase/firestore';
+import { Debt, DebtGroup, RecurringDebt, RecurringFrequency } from '@/firebase/models';
+import { useColorScheme } from '@/hooks/useColorScheme';
+import eventEmitter from '@/utils/eventEmitter';
 
 // Helper function to format recurring frequency in a user-friendly way
 const formatRecurringFrequency = (frequency: RecurringFrequency): string => {
@@ -35,10 +34,14 @@ const formatRecurringFrequency = (frequency: RecurringFrequency): string => {
 const DebtItem = memo(({ 
   item, 
   onMarkPaid,
+  onEdit,
+  onDelete,
   userProfile
 }: { 
   item: Debt, 
   onMarkPaid: (id: string) => void,
+  onEdit: (item: Debt) => void,
+  onDelete: (id: string) => void,
   userProfile: any
 }) => {
   const [recurringInfo, setRecurringInfo] = useState<RecurringDebt | null>(null);
@@ -109,7 +112,7 @@ const DebtItem = memo(({
       
       // Create the SMS URL for opening the messages app with number and message
       const url = Platform.OS === 'ios' 
-        ? `sms:${phoneNumber}&body=${encodedMessage}`
+        ? `sms:${phoneNumber}?body=${encodedMessage}`
         : `sms:${phoneNumber}?body=${encodedMessage}`;
       
       Linking.openURL(url).catch(err => {
@@ -118,7 +121,7 @@ const DebtItem = memo(({
     } else {
       // If no phone number, just open the messages app with the message body
       const url = Platform.OS === 'ios' 
-        ? `sms:&body=${encodedMessage}`
+        ? `sms:?body=${encodedMessage}`
         : `sms:?body=${encodedMessage}`;
         
       Linking.openURL(url).catch(err => {
@@ -232,6 +235,36 @@ const DebtItem = memo(({
             <Ionicons name="checkmark-circle" size={16} color={Colors.light.tint} />
             <Text style={styles.actionButtonText}>Mark Paid</Text>
           </Pressable>
+          
+          <View style={styles.smallButtonsContainer}>
+            <Pressable 
+              style={({pressed}) => [
+                styles.smallActionButton,
+                styles.editButton,
+                {opacity: pressed ? 0.8 : 1}
+              ]}
+              onPress={(e) => {
+                e.stopPropagation();
+                onEdit(item);
+              }}
+            >
+              <Ionicons name="pencil-outline" size={14} color={Colors.light.tint} />
+            </Pressable>
+            
+            <Pressable 
+              style={({pressed}) => [
+                styles.smallActionButton,
+                styles.deleteButton,
+                {opacity: pressed ? 0.8 : 1}
+              ]}
+              onPress={(e) => {
+                e.stopPropagation();
+                onDelete(item.id!);
+              }}
+            >
+              <Ionicons name="trash-outline" size={14} color="#FF5A5A" />
+            </Pressable>
+          </View>
         </View>
       )}
     </Pressable>
@@ -405,13 +438,51 @@ export default function HomeScreen() {
     );
   };
   
+  // Handle deleting a debt
+  const handleDeleteDebt = async (debtId: string) => {
+    if (!currentUser) return;
+    
+    Alert.alert(
+      'Delete Debt',
+      'Are you sure you want to delete this debt?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteDebt(currentUser.uid, debtId);
+              // Remove the debt from local state
+              setDebts(prevDebts => prevDebts.filter(debt => debt.id !== debtId));
+            } catch (err) {
+              console.error('Error deleting debt:', err);
+              Alert.alert('Error', 'Failed to delete debt');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  // Handle editing a debt
+  const handleEditDebt = (item: Debt) => {
+    router.push({
+      pathname: '/add-debt',
+      params: { 
+        editMode: 'true',
+        debt: JSON.stringify(item)
+      }
+    });
+  };
+  
   // Render a debt item - use the memoized component with userProfile
   const renderDebtItem = useCallback(({ item }: { item: Debt }) => {
-    // Only render non-group debts here
+    // Skip rendering if this debt belongs to a group - it will be rendered within the group
     if (item.groupId) return null;
     
-    return <DebtItem item={item} onMarkPaid={handleMarkPaid} userProfile={userProfile} />;
-  }, [handleMarkPaid, userProfile]);
+    return <DebtItem item={item} onMarkPaid={handleMarkPaid} onEdit={handleEditDebt} onDelete={handleDeleteDebt} userProfile={userProfile} />;
+  }, [handleMarkPaid, handleEditDebt, handleDeleteDebt, userProfile]);
   
   // Render group debt items
   const renderGroupItems = useCallback(() => {
@@ -498,39 +569,88 @@ export default function HomeScreen() {
               styles.receiptButton,
               {opacity: pressed ? 0.8 : 1}
             ]}
-            onPress={async () => {
-              try {
-                // Request camera permission
-                const { status } = await ImagePicker.requestCameraPermissionsAsync();
-                
-                if (status !== 'granted') {
-                  console.error('Camera permission not granted');
-                  Alert.alert('Permission Required', 
-                    'Camera permission is required to scan receipts. Please enable it in your device settings.');
-                  return;
-                }
-                
-                // Launch camera
-                const result = await ImagePicker.launchCameraAsync({
-                  mediaTypes: ImagePicker.MediaTypeOptions.Images,
-                  quality: 0.8,
-                  allowsEditing: true,
-                  aspect: [4, 3]
-                });
-                
-                if (!result.canceled && result.assets.length > 0) {
-                  // Navigate to receipt splitter screen with the image
-                  router.push({
-                    pathname: '/receipt-splitter',
-                    params: { imageUri: result.assets[0].uri }
-                  });
-                }
-              } catch (error) {
-                console.error('Camera or navigation error:', error);
-                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                Alert.alert('Camera Error', 
-                  `There was a problem with the camera: ${errorMessage}. Please try again.`);
-              }
+            onPress={() => {
+              Alert.alert(
+                'Scan Receipt',
+                'Choose how you want to add your receipt:',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Take Photo',
+                    onPress: async () => {
+                      try {
+                        // Request camera permission
+                        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+                        
+                        if (status !== 'granted') {
+                          console.error('Camera permission not granted');
+                          Alert.alert('Permission Required', 
+                            'Camera permission is required to scan receipts. Please enable it in your device settings.');
+                          return;
+                        }
+                        
+                        // Launch camera
+                        const result = await ImagePicker.launchCameraAsync({
+                          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                          quality: 0.8,
+                          allowsEditing: true,
+                          aspect: [4, 3]
+                        });
+                        
+                        if (!result.canceled && result.assets.length > 0) {
+                          // Navigate to receipt splitter screen with the image
+                          router.push({
+                            pathname: '/receipt-splitter',
+                            params: { imageUri: result.assets[0].uri }
+                          });
+                        }
+                      } catch (error) {
+                        console.error('Camera or navigation error:', error);
+                        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                        Alert.alert('Camera Error', 
+                          `There was a problem with the camera: ${errorMessage}. Please try again.`);
+                      }
+                    }
+                  },
+                  {
+                    text: 'Upload Photo',
+                    onPress: async () => {
+                      try {
+                        // Request media library permission
+                        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                        
+                        if (status !== 'granted') {
+                          console.error('Media library permission not granted');
+                          Alert.alert('Permission Required', 
+                            'Photo library permission is required to upload receipts. Please enable it in your device settings.');
+                          return;
+                        }
+                        
+                        // Launch image picker
+                        const result = await ImagePicker.launchImageLibraryAsync({
+                          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                          quality: 0.8,
+                          allowsEditing: true,
+                          aspect: [4, 3]
+                        });
+                        
+                        if (!result.canceled && result.assets.length > 0) {
+                          // Navigate to receipt splitter screen with the image
+                          router.push({
+                            pathname: '/receipt-splitter',
+                            params: { imageUri: result.assets[0].uri }
+                          });
+                        }
+                      } catch (error) {
+                        console.error('Image picker or navigation error:', error);
+                        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                        Alert.alert('Upload Error', 
+                          `There was a problem uploading the photo: ${errorMessage}. Please try again.`);
+                      }
+                    }
+                  }
+                ]
+              );
             }}
           >
             <LinearGradient
@@ -674,27 +794,64 @@ export default function HomeScreen() {
                   styles.featureHighlightButton,
                   {opacity: pressed ? 0.8 : 1}
                 ]}
-                onPress={async () => {
-                  try {
-                    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-                    if (status === 'granted') {
-                      const result = await ImagePicker.launchCameraAsync({
-                        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-                        quality: 0.8,
-                        allowsEditing: true,
-                        aspect: [4, 3]
-                      });
-                      
-                      if (!result.canceled && result.assets.length > 0) {
-                        router.push({
-                          pathname: '/receipt-splitter',
-                          params: { imageUri: result.assets[0].uri }
-                        });
+                onPress={() => {
+                  Alert.alert(
+                    'Scan Receipt',
+                    'Choose how you want to add your receipt:',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Take Photo',
+                        onPress: async () => {
+                          try {
+                            const { status } = await ImagePicker.requestCameraPermissionsAsync();
+                            if (status === 'granted') {
+                              const result = await ImagePicker.launchCameraAsync({
+                                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                                quality: 0.8,
+                                allowsEditing: true,
+                                aspect: [4, 3]
+                              });
+                              
+                              if (!result.canceled && result.assets.length > 0) {
+                                router.push({
+                                  pathname: '/receipt-splitter',
+                                  params: { imageUri: result.assets[0].uri }
+                                });
+                              }
+                            }
+                          } catch (error) {
+                            console.error('Camera error:', error);
+                          }
+                        }
+                      },
+                      {
+                        text: 'Upload Photo',
+                        onPress: async () => {
+                          try {
+                            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                            if (status === 'granted') {
+                              const result = await ImagePicker.launchImageLibraryAsync({
+                                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                                quality: 0.8,
+                                allowsEditing: true,
+                                aspect: [4, 3]
+                              });
+                              
+                              if (!result.canceled && result.assets.length > 0) {
+                                router.push({
+                                  pathname: '/receipt-splitter',
+                                  params: { imageUri: result.assets[0].uri }
+                                });
+                              }
+                            }
+                          } catch (error) {
+                            console.error('Upload error:', error);
+                          }
+                        }
                       }
-                    }
-                  } catch (error) {
-                    console.error('Camera error:', error);
-                  }
+                    ]
+                  );
                 }}
               >
                 <LinearGradient
@@ -1324,5 +1481,24 @@ const styles = StyleSheet.create({
   },
   pressedDebtItem: {
     backgroundColor: 'rgba(74, 226, 144, 0.1)',
+  },
+  deleteButton: {
+    backgroundColor: 'rgba(255, 90, 90, 0.15)',
+  },
+  editButton: {
+    backgroundColor: 'rgba(74, 226, 144, 0.15)',
+  },
+  smallButtonsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  smallActionButton: {
+    flex: 1,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: 'rgba(74, 226, 144, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

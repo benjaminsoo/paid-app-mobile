@@ -630,6 +630,14 @@ export default function ProfileScreen() {
               </LinearGradient>
             </Pressable>
             
+            {/* Contact Support Link */}
+            <Pressable 
+              style={styles.contactSupportButton}
+              onPress={() => Linking.openURL('mailto:benjaminsoo@ucsb.edu')}
+            >
+              <Text style={styles.contactSupportText}>Contact Support</Text>
+            </Pressable>
+            
             {/* Privacy Policy Link */}
             <Pressable 
               style={styles.privacyPolicyButton}
@@ -674,6 +682,14 @@ export default function ProfileScreen() {
                   <Text style={styles.signOutButtonText}>Sign Out</Text>
                 </View>
               </LinearGradient>
+            </Pressable>
+            
+            {/* Contact Support Link */}
+            <Pressable 
+              style={styles.contactSupportButton}
+              onPress={() => Linking.openURL('mailto:benjaminsoo@ucsb.edu')}
+            >
+              <Text style={styles.contactSupportText}>Contact Support</Text>
             </Pressable>
             
             {/* Privacy Policy Link */}
@@ -1282,11 +1298,21 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   privacyPolicyButton: {
-    marginTop: 20,
+    marginTop: 8,
     padding: 12,
     alignItems: 'center',
   },
   privacyPolicyText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 14,
+    fontFamily: 'AeonikBlack-Regular',
+  },
+  contactSupportButton: {
+    marginTop: 16,
+    padding: 12,
+    alignItems: 'center',
+  },
+  contactSupportText: {
     color: 'rgba(255,255,255,0.6)',
     fontSize: 14,
     fontFamily: 'AeonikBlack-Regular',

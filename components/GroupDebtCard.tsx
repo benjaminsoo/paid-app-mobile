@@ -1,23 +1,21 @@
-import React, { useState, useCallback } from 'react';
-import {
-  StyleSheet,
-  View,
-  Text,
-  Pressable,
-  Animated,
-  LayoutAnimation,
-  Platform,
-  UIManager,
-  Linking,
-  Alert
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
 import { Colors } from '@/constants/Colors';
-import { DebtGroup } from '@/firebase/models';
-import { Debt } from '@/firebase/models';
-import * as Clipboard from 'expo-clipboard';
 import { useAuth } from '@/contexts/AuthContext';
+import { Debt, DebtGroup } from '@/firebase/models';
+import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
+import { useRouter } from 'expo-router';
+import React, { useCallback, useState } from 'react';
+import {
+    Alert,
+    LayoutAnimation,
+    Linking,
+    Platform,
+    Pressable,
+    StyleSheet,
+    Text,
+    UIManager,
+    View
+} from 'react-native';
 
 // Enable LayoutAnimation on Android
 if (Platform.OS === 'android') {

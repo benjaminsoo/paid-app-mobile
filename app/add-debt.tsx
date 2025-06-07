@@ -1,25 +1,24 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, TextInput, Pressable, View, KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator } from 'react-native';
-import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Contacts from 'expo-contacts';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import React, { useState } from 'react';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
-import { Colors } from '@/constants/Colors';
-import { useColorScheme } from '@/hooks/useColorScheme';
-import { useAuth } from '@/contexts/AuthContext';
-import { createDebt, createDebtGroup, addDebtToGroup } from '@/firebase/firestore';
-import eventEmitter from '@/utils/eventEmitter';
 import ContactsModal from '@/components/ContactsModal';
 import DebtModeSelector, { DebtMode } from '@/components/DebtModeSelector';
 import GroupDebtForm from '@/components/GroupDebtForm';
 import { GroupMember } from '@/components/GroupMemberItem';
 import RecurringOptionsComponent from '@/components/RecurringOptionsComponent';
-import { RecurringOptions as RecurringOptionsType, RecurringFrequency } from '@/firebase/models';
+import { ThemedText } from '@/components/ThemedText';
+import { Colors } from '@/constants/Colors';
+import { useAuth } from '@/contexts/AuthContext';
+import { addDebtToGroup, createDebt, createDebtGroup, updateDebt } from '@/firebase/firestore';
+import { RecurringFrequency, RecurringOptions as RecurringOptionsType } from '@/firebase/models';
+import { useColorScheme } from '@/hooks/useColorScheme';
+import eventEmitter from '@/utils/eventEmitter';
 
 export default function AddDebtScreen() {
   const router = useRouter();
@@ -28,11 +27,27 @@ export default function AddDebtScreen() {
   const { currentUser } = useAuth();
   const params = useLocalSearchParams();
   
-  // Use params if available (from receipt splitter)
-  const [name, setName] = useState(params.debtorName as string || '');
-  const [amount, setAmount] = useState(params.amount as string || '');
-  const [description, setDescription] = useState(params.description as string || '');
-  const [phoneNumber, setPhoneNumber] = useState('');
+  // Check if we're in edit mode
+  const isEditMode = params.editMode === 'true';
+  const editDebt = isEditMode && params.debt ? JSON.parse(params.debt as string) : null;
+  
+  // Use params if available (from receipt splitter or edit mode)
+  const [name, setName] = useState(
+    editDebt?.debtorName || 
+    params.debtorName as string || 
+    ''
+  );
+  const [amount, setAmount] = useState(
+    editDebt?.amount?.toString() || 
+    params.amount as string || 
+    ''
+  );
+  const [description, setDescription] = useState(
+    editDebt?.description || 
+    params.description as string || 
+    ''
+  );
+  const [phoneNumber, setPhoneNumber] = useState(editDebt?.phoneNumber || '');
   const [loading, setLoading] = useState(false);
   const [contactsModalVisible, setContactsModalVisible] = useState(false);
   
@@ -41,10 +56,10 @@ export default function AddDebtScreen() {
   
   // State for recurring options
   const [recurringOptions, setRecurringOptions] = useState<RecurringOptionsType>({
-    isRecurring: false,
-    frequency: 'monthly' as RecurringFrequency,
-    startDate: new Date(),
-    endDate: null,
+    isRecurring: editDebt?.isRecurring || false,
+    frequency: (editDebt?.recurringFrequency as RecurringFrequency) || 'monthly',
+    startDate: editDebt?.recurringStartDate ? new Date(editDebt.recurringStartDate) : new Date(),
+    endDate: editDebt?.recurringEndDate ? new Date(editDebt.recurringEndDate) : null,
   });
   
   // Handle contact selection
@@ -107,32 +122,40 @@ export default function AddDebtScreen() {
         });
       }
       
-      console.log('Creating debt with data:', debtData);
+      console.log(isEditMode ? 'Updating debt with data:' : 'Creating debt with data:', debtData);
       
-      const newDebt = await createDebt(currentUser.uid, debtData);
-      console.log('Successfully created debt:', newDebt);
+      let result;
+      if (isEditMode && editDebt?.id) {
+        // Update existing debt
+        result = await updateDebt(currentUser.uid, editDebt.id, debtData);
+        console.log('Successfully updated debt:', result);
+      } else {
+        // Create new debt
+        result = await createDebt(currentUser.uid, debtData);
+        console.log('Successfully created debt:', result);
+      }
       
-      // Emit an event that a debt was added - this will trigger a refresh on the home screen
-      eventEmitter.emit('DEBT_ADDED', newDebt);
+      // Emit an event that a debt was added/updated - this will trigger a refresh on the home screen
+      eventEmitter.emit('DEBT_ADDED', result);
       
       const phoneNumberInfo = phoneNumber ? ` (Phone: ${phoneNumber})` : '';
       const recurringInfo = recurringOptions.isRecurring ? ` (${recurringOptions.frequency})` : '';
       
       Alert.alert(
-        'Debt Added', 
-        `Successfully added${recurringInfo} debt of $${amount} from ${name}${phoneNumberInfo}.`,
+        isEditMode ? 'Debt Updated' : 'Debt Added', 
+        `Successfully ${isEditMode ? 'updated' : 'added'}${recurringInfo} debt of $${amount} from ${name}${phoneNumberInfo}.`,
         [{ 
           text: 'OK', 
           onPress: () => {
-            console.log('Navigating back to home after debt creation');
+            console.log('Navigating back to home after debt', isEditMode ? 'update' : 'creation');
             router.back();
           }
         }]
       );
     } catch (error) {
-      console.error('Add debt error:', error);
+      console.error(isEditMode ? 'Update debt error:' : 'Add debt error:', error);
       Alert.alert(
-        'Error Adding Debt', 
+        isEditMode ? 'Error Updating Debt' : 'Error Adding Debt', 
         'There was a problem saving your debt. Please try again.'
       );
     } finally {
@@ -254,7 +277,9 @@ export default function AddDebtScreen() {
         >
           <Ionicons name="chevron-back" size={24} color={Colors.light.tint} />
         </Pressable>
-        <ThemedText type="subtitle" style={styles.headerTitle}>Add Debt</ThemedText>
+        <ThemedText type="subtitle" style={styles.headerTitle}>
+          {isEditMode ? 'Edit Debt' : 'Add Debt'}
+        </ThemedText>
         <View style={{width: 24}} />
       </View>
       
@@ -406,7 +431,7 @@ export default function AddDebtScreen() {
                   <Ionicons name="checkmark-circle" size={18} color="#000" style={styles.buttonIcon} />
                 )}
                 <ThemedText style={styles.addButtonText}>
-                  {loading ? 'Saving...' : 'Save Debt'}
+                  {loading ? 'Saving...' : (isEditMode ? 'Update Debt' : 'Save Debt')}
                 </ThemedText>
               </View>
             </LinearGradient>
